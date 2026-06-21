@@ -1,4 +1,21 @@
-import { LOCKED_GUIDELINES, type RuleDefinition } from "../lib/decisionEngine";
+import {
+  LOCKED_GUIDELINES,
+  childSafetyDecision,
+  type AgeGroup,
+  type DecisionResult,
+  type InputType,
+  type RetentionMode,
+  type RuleDefinition,
+  type ServiceChildAccess,
+  type ServiceContext,
+} from "../lib/decisionEngine";
+import {
+  PROMPT_RUBRIC,
+  evaluateRubricResult,
+  type PromptRubricCase,
+  type PromptTestContext,
+  type RubricEvaluation,
+} from "./promptRubric";
 import "./styles.css";
 
 type CustomRule = RuleDefinition & {
@@ -119,6 +136,142 @@ app.innerHTML = `
         <div id="rulesList" class="rules-list" aria-live="polite"></div>
       </section>
     </section>
+
+    <section class="prompt-tester" aria-labelledby="prompt-tester-title">
+      <div class="prompt-tester-header">
+        <div>
+          <p class="eyebrow">Prompt Tester</p>
+          <h2 id="prompt-tester-title">Chatbot Rule Check</h2>
+        </div>
+        <label class="rubric-picker">
+          Rubric case
+          <select id="rubricCase">
+            <option value="">Freeform prompt</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="chatbot-grid">
+        <form id="promptForm" class="prompt-form">
+          <label>
+            Message prompt
+            <textarea
+              id="promptText"
+              name="promptText"
+              rows="6"
+              maxlength="1200"
+              placeholder="Paste a user message, AI response, or developer setting to test against the dashboard rules."
+              required
+            ></textarea>
+          </label>
+
+          <div class="context-grid">
+            <label>
+              Input type
+              <select id="inputType" name="inputType">
+                <option value="user_message">User message</option>
+                <option value="ai_output">AI output</option>
+                <option value="developer_setting">Developer setting</option>
+                <option value="guardian_setting">Guardian setting</option>
+              </select>
+            </label>
+
+            <label>
+              Age group
+              <select id="ageGroup" name="ageGroup">
+                <option value="teen">Teen</option>
+                <option value="child">Child</option>
+                <option value="unknown">Unknown</option>
+                <option value="verified_adult">Verified adult</option>
+              </select>
+            </label>
+
+            <label>
+              Vulnerability
+              <select id="vulnerability" name="vulnerability">
+                <option value="none">None</option>
+                <option value="moderate">Moderate</option>
+                <option value="high">High</option>
+              </select>
+            </label>
+
+            <label>
+              Child access
+              <select id="childAccess" name="childAccess">
+                <option value="mixed_audience">Mixed audience</option>
+                <option value="child_directed">Child directed</option>
+                <option value="unknown">Unknown</option>
+                <option value="verified_adult_only">Verified adult only</option>
+              </select>
+            </label>
+
+            <label>
+              App type
+              <select id="appType" name="appType">
+                <option value="chatbot">Chatbot</option>
+                <option value="education">Education</option>
+                <option value="social">Social</option>
+                <option value="gaming">Gaming</option>
+                <option value="mental_health">Mental health</option>
+                <option value="adult_platform">Adult platform</option>
+                <option value="general">General</option>
+              </select>
+            </label>
+
+            <label>
+              Requested retention
+              <select id="requestedRetention" name="requestedRetention">
+                <option value="">None</option>
+                <option value="NO_CONTENT">No content</option>
+                <option value="METADATA_ONLY">Metadata only</option>
+                <option value="REDACTED_EXCERPT">Redacted excerpt</option>
+                <option value="FULL_CONTENT_REQUIRES_JUSTIFICATION">Full content requires justification</option>
+              </select>
+            </label>
+          </div>
+
+          <fieldset class="flag-grid" aria-label="Prompt flags">
+            <label>
+              <input id="imminentRisk" type="checkbox" />
+              Imminent risk
+            </label>
+            <label>
+              <input id="repeatedAttempts" type="checkbox" />
+              Repeated attempts
+            </label>
+            <label>
+              <input id="involvesTrustedAdult" type="checkbox" />
+              Trusted adult involved
+            </label>
+            <label>
+              <input id="involvesPrivateImages" type="checkbox" />
+              Private images
+            </label>
+            <label>
+              <input id="involvesLocationOrPII" type="checkbox" />
+              Location or PII
+            </label>
+            <label>
+              <input id="couldEnableHarm" type="checkbox" />
+              Could enable harm
+            </label>
+          </fieldset>
+
+          <div class="tester-actions">
+            <button class="primary-action" type="submit">Run check</button>
+            <button class="secondary-action" type="button" id="runRubric">
+              Run rubric suite
+            </button>
+          </div>
+        </form>
+
+        <section class="chatbot-output" aria-live="polite" aria-label="Chatbot output">
+          <div id="chatbotResult" class="chatbot-empty">
+            Run a prompt to see the decision, matched rules, and rubric checks.
+          </div>
+        </section>
+      </div>
+    </section>
   </main>
 
   <div class="modal-backdrop" id="deleteModal" hidden>
@@ -158,6 +311,25 @@ const deleteModalText = getElement<HTMLParagraphElement>("#deleteModalText");
 const cancelDelete = getElement<HTMLButtonElement>("#cancelDelete");
 const confirmDelete = getElement<HTMLButtonElement>("#confirmDelete");
 const tabs = Array.from(document.querySelectorAll<HTMLButtonElement>(".tab"));
+const promptForm = getElement<HTMLFormElement>("#promptForm");
+const promptText = getElement<HTMLTextAreaElement>("#promptText");
+const rubricCaseSelect = getElement<HTMLSelectElement>("#rubricCase");
+const inputType = getElement<HTMLSelectElement>("#inputType");
+const ageGroup = getElement<HTMLSelectElement>("#ageGroup");
+const vulnerability = getElement<HTMLSelectElement>("#vulnerability");
+const childAccess = getElement<HTMLSelectElement>("#childAccess");
+const appType = getElement<HTMLSelectElement>("#appType");
+const requestedRetention = getElement<HTMLSelectElement>("#requestedRetention");
+const imminentRisk = getElement<HTMLInputElement>("#imminentRisk");
+const repeatedAttempts = getElement<HTMLInputElement>("#repeatedAttempts");
+const involvesTrustedAdult = getElement<HTMLInputElement>("#involvesTrustedAdult");
+const involvesPrivateImages = getElement<HTMLInputElement>("#involvesPrivateImages");
+const involvesLocationOrPII = getElement<HTMLInputElement>("#involvesLocationOrPII");
+const couldEnableHarm = getElement<HTMLInputElement>("#couldEnableHarm");
+const runRubric = getElement<HTMLButtonElement>("#runRubric");
+const chatbotResult = getElement<HTMLDivElement>("#chatbotResult");
+
+populateRubricCases();
 
 form.addEventListener("submit", (event) => {
   event.preventDefault();
@@ -192,6 +364,24 @@ searchInput.addEventListener("input", () => {
   render();
 });
 
+rubricCaseSelect.addEventListener("change", () => {
+  const selectedCase = getSelectedRubricCase();
+
+  if (selectedCase) {
+    applyPromptCase(selectedCase);
+    runPromptCheck(selectedCase);
+  }
+});
+
+promptForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  runPromptCheck(getSelectedRubricCase());
+});
+
+runRubric.addEventListener("click", () => {
+  runRubricSuite();
+});
+
 cancelDelete.addEventListener("click", closeDeleteModal);
 deleteModal.addEventListener("click", (event) => {
   if (event.target === deleteModal) {
@@ -220,6 +410,292 @@ function getElement<T extends Element>(selector: string): T {
   }
 
   return element;
+}
+
+function populateRubricCases(): void {
+  PROMPT_RUBRIC.forEach((rubricCase) => {
+    const option = document.createElement("option");
+    option.value = rubricCase.id;
+    option.textContent = rubricCase.label;
+    rubricCaseSelect.append(option);
+  });
+}
+
+function getSelectedRubricCase(): PromptRubricCase | null {
+  return (
+    PROMPT_RUBRIC.find((rubricCase) => rubricCase.id === rubricCaseSelect.value) ??
+    null
+  );
+}
+
+function applyPromptCase(rubricCase: PromptRubricCase): void {
+  promptText.value = rubricCase.prompt;
+  applyPromptContext(rubricCase.context);
+}
+
+function applyPromptContext(context: PromptTestContext): void {
+  inputType.value = context.inputType;
+  ageGroup.value = context.ageGroup;
+  vulnerability.value = context.vulnerability;
+  childAccess.value = context.childAccess;
+  appType.value = context.appType;
+  requestedRetention.value = context.requestedRetention ?? "";
+  imminentRisk.checked = Boolean(context.imminentRisk);
+  repeatedAttempts.checked = Boolean(context.repeatedAttempts);
+  involvesTrustedAdult.checked = Boolean(context.involvesTrustedAdult);
+  involvesPrivateImages.checked = Boolean(context.involvesPrivateImages);
+  involvesLocationOrPII.checked = Boolean(context.involvesLocationOrPII);
+  couldEnableHarm.checked = Boolean(context.couldEnableHarm);
+}
+
+function getPromptContext(): PromptTestContext {
+  return {
+    inputType: inputType.value as InputType,
+    ageGroup: ageGroup.value as AgeGroup,
+    vulnerability: vulnerability.value as PromptTestContext["vulnerability"],
+    childAccess: childAccess.value as ServiceChildAccess,
+    appType: appType.value as ServiceContext["appType"],
+    repeatedAttempts: repeatedAttempts.checked,
+    imminentRisk: imminentRisk.checked,
+    involvesTrustedAdult: involvesTrustedAdult.checked,
+    involvesPrivateImages: involvesPrivateImages.checked,
+    involvesLocationOrPII: involvesLocationOrPII.checked,
+    couldEnableHarm: couldEnableHarm.checked,
+    requestedRetention: requestedRetention.value
+      ? (requestedRetention.value as RetentionMode)
+      : undefined,
+  };
+}
+
+function runPromptCheck(rubricCase: PromptRubricCase | null): void {
+  const result = runDecision(promptText.value, getPromptContext());
+  const evaluation = rubricCase
+    ? evaluateRubricResult(result, rubricCase.expected)
+    : null;
+
+  renderPromptResult(result, evaluation, rubricCase);
+}
+
+function runDecision(prompt: string, context: PromptTestContext): DecisionResult {
+  return childSafetyDecision(
+    {
+      text: prompt.trim(),
+      inputType: context.inputType,
+      repeatedAttempts: context.repeatedAttempts,
+      imminentRisk: context.imminentRisk,
+      involvesTrustedAdult: context.involvesTrustedAdult,
+      involvesPrivateImages: context.involvesPrivateImages,
+      involvesLocationOrPII: context.involvesLocationOrPII,
+      couldEnableHarm: context.couldEnableHarm,
+      requestedRetention: context.requestedRetention,
+    },
+    {
+      ageGroup: context.ageGroup,
+      vulnerability: context.vulnerability,
+    },
+    {
+      childAccess: context.childAccess,
+      appType: context.appType,
+    },
+    {
+      policyVersion: "hackathon-v1",
+    }
+  );
+}
+
+function runRubricSuite(): void {
+  const suiteResults = PROMPT_RUBRIC.map((rubricCase) => {
+    const result = runDecision(rubricCase.prompt, rubricCase.context);
+    const evaluation = evaluateRubricResult(result, rubricCase.expected);
+
+    return {
+      rubricCase,
+      result,
+      evaluation,
+    };
+  });
+  const passedCount = suiteResults.filter((item) => item.evaluation.passed).length;
+
+  chatbotResult.replaceChildren();
+  chatbotResult.className = "chatbot-result";
+
+  const title = document.createElement("h3");
+  title.textContent = `Rubric suite: ${passedCount}/${suiteResults.length} passed`;
+  chatbotResult.append(title);
+
+  const list = document.createElement("div");
+  list.className = "rubric-suite-list";
+
+  suiteResults.forEach(({ rubricCase, result, evaluation }) => {
+    const row = document.createElement("article");
+    row.className = "suite-row";
+    row.classList.toggle("is-pass", evaluation.passed);
+    row.classList.toggle("is-fail", !evaluation.passed);
+
+    const heading = document.createElement("div");
+    heading.className = "suite-heading";
+
+    const name = document.createElement("strong");
+    name.textContent = rubricCase.label;
+
+    const badge = document.createElement("span");
+    badge.className = evaluation.passed ? "status-badge pass" : "status-badge fail";
+    badge.textContent = evaluation.passed ? "PASS" : "FAIL";
+
+    heading.append(name, badge);
+
+    const details = document.createElement("p");
+    details.textContent = `${result.decision} / ${result.riskLevel} / ${
+      result.matchedRules.map((rule) => rule.id).join(", ") || "no rules"
+    }`;
+
+    row.append(heading, details);
+
+    if (!evaluation.passed) {
+      const failedChecks = document.createElement("ul");
+      failedChecks.className = "check-list";
+      evaluation.checks
+        .filter((check) => !check.passed)
+        .forEach((check) => {
+          const item = document.createElement("li");
+          item.textContent = `${check.label}: expected ${check.expected}, got ${check.actual}`;
+          failedChecks.append(item);
+        });
+      row.append(failedChecks);
+    }
+
+    list.append(row);
+  });
+
+  chatbotResult.append(list);
+}
+
+function renderPromptResult(
+  result: DecisionResult,
+  evaluation: RubricEvaluation | null,
+  rubricCase: PromptRubricCase | null
+): void {
+  chatbotResult.replaceChildren();
+  chatbotResult.className = "chatbot-result";
+
+  const header = document.createElement("div");
+  header.className = "result-header";
+
+  const title = document.createElement("h3");
+  title.textContent = "Decision result";
+
+  const badge = document.createElement("span");
+  badge.className = `decision-badge ${result.riskLevel}`;
+  badge.textContent = result.decision;
+
+  header.append(title, badge);
+  chatbotResult.append(header);
+
+  const summary = document.createElement("dl");
+  summary.className = "result-summary";
+  appendMetric(summary, "Risk", result.riskLevel);
+  appendMetric(summary, "Score", String(result.riskScore));
+  appendMetric(summary, "Policy", result.appliedPolicy);
+  appendMetric(summary, "Retention", result.retentionMode);
+  appendMetric(summary, "Audit", result.auditRequired ? "required" : "not required");
+  appendMetric(
+    summary,
+    "Human review",
+    result.humanReviewRequired ? "required" : "not required"
+  );
+  chatbotResult.append(summary);
+
+  const matchedRules = document.createElement("div");
+  matchedRules.className = "matched-rules";
+
+  const matchedTitle = document.createElement("h4");
+  matchedTitle.textContent = "Matched rules";
+  matchedRules.append(matchedTitle);
+
+  if (result.matchedRules.length === 0) {
+    const empty = document.createElement("p");
+    empty.textContent = "No locked rules matched this prompt.";
+    matchedRules.append(empty);
+  } else {
+    result.matchedRules.forEach((rule) => {
+      const ruleItem = document.createElement("article");
+      ruleItem.className = "matched-rule";
+
+      const ruleHeading = document.createElement("strong");
+      ruleHeading.textContent = `${rule.id}: ${rule.label}`;
+
+      const ruleDescription = document.createElement("p");
+      ruleDescription.textContent = rule.matchReason
+        ? `${rule.description} ${rule.matchReason}`
+        : rule.description;
+
+      ruleItem.append(ruleHeading, ruleDescription);
+      matchedRules.append(ruleItem);
+    });
+  }
+
+  chatbotResult.append(matchedRules);
+
+  const explanation = document.createElement("div");
+  explanation.className = "explanation-box";
+
+  const explanationTitle = document.createElement("h4");
+  explanationTitle.textContent = "Chatbot explanation";
+
+  const explanationText = document.createElement("p");
+  explanationText.textContent = result.explanation;
+
+  explanation.append(explanationTitle, explanationText);
+  chatbotResult.append(explanation);
+
+  if (evaluation && rubricCase) {
+    renderRubricEvaluation(evaluation, rubricCase);
+  }
+}
+
+function appendMetric(list: HTMLDListElement, label: string, value: string): void {
+  const wrapper = document.createElement("div");
+  const term = document.createElement("dt");
+  const description = document.createElement("dd");
+
+  term.textContent = label;
+  description.textContent = value;
+  wrapper.append(term, description);
+  list.append(wrapper);
+}
+
+function renderRubricEvaluation(
+  evaluation: RubricEvaluation,
+  rubricCase: PromptRubricCase
+): void {
+  const rubric = document.createElement("section");
+  rubric.className = "rubric-result";
+
+  const header = document.createElement("div");
+  header.className = "result-header";
+
+  const title = document.createElement("h4");
+  title.textContent = `Rubric: ${rubricCase.label}`;
+
+  const badge = document.createElement("span");
+  badge.className = evaluation.passed ? "status-badge pass" : "status-badge fail";
+  badge.textContent = evaluation.passed ? "PASS" : "FAIL";
+
+  header.append(title, badge);
+  rubric.append(header);
+
+  const list = document.createElement("ul");
+  list.className = "check-list";
+
+  evaluation.checks.forEach((check) => {
+    const item = document.createElement("li");
+    item.className = check.passed ? "is-pass" : "is-fail";
+    item.textContent = `${check.label}: expected ${check.expected}, got ${check.actual}`;
+    list.append(item);
+  });
+
+  rubric.append(list);
+  chatbotResult.append(rubric);
 }
 
 function loadCustomRules(): CustomRule[] {
