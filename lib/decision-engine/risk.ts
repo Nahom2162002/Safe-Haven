@@ -1,5 +1,13 @@
 import type { InputEvent, MatchedRule, RiskLevel, UserContext } from "./types";
 
+export function isContextOnlyRule(rule: MatchedRule): boolean {
+  return rule.id === "R0";
+}
+
+export function getHarmRules(matchedRules: MatchedRule[]): MatchedRule[] {
+  return matchedRules.filter((rule) => !isContextOnlyRule(rule));
+}
+
 function riskLevelToScore(level: RiskLevel): number {
   switch (level) {
     case "low":
@@ -25,17 +33,18 @@ export function calculateRiskScore(
   input: InputEvent,
   user: UserContext
 ): number {
-  if (matchedRules.length === 0) return 0;
+  const harmRules = getHarmRules(matchedRules);
+
+  if (harmRules.length === 0) return 0;
 
   const highestBase = Math.max(
-    ...matchedRules.map((rule) => riskLevelToScore(rule.baseRisk))
+    ...harmRules.map((rule) => riskLevelToScore(rule.baseRisk))
   );
 
   let score = highestBase;
 
   if (user.ageGroup === "child") score += 8;
   if (user.ageGroup === "teen") score += 5;
-  if (user.ageGroup === "unknown") score += 6;
   if (user.vulnerability === "moderate") score += 5;
   if (user.vulnerability === "high") score += 10;
 

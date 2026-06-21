@@ -139,9 +139,21 @@ export interface DecisionTraceStep {
   detail: string;
 }
 
+export interface DecisionContext {
+  ageGroup: AgeGroup;
+  vulnerability: UserContext["vulnerability"];
+  serviceChildAccess: ServiceChildAccess;
+  appType: ServiceContext["appType"];
+  appliedPolicy: string;
+  childSafeDefaultApplied: boolean;
+  childSafePolicyApplied: boolean;
+  adultPolicyApplied: boolean;
+}
+
 export interface DecisionResult {
   decision: DecisionAction;
   appliedPolicy: string;
+  context: DecisionContext;
   matchedRules: MatchedRule[];
   riskScore: number;
   riskLevel: RiskLevel;

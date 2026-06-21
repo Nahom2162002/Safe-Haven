@@ -118,6 +118,8 @@ export const LOCKED_RULE_PATTERNS: Record<LockedRuleId, RegExp[]> = {
     /\bdangerous challenge\b/,
   ],
   R14: [
+    /\b(want(?:ed)?|going|plan(?:ning)?) to (kill|hurt|harm|poison)\b.*\b(bird|cat|dog|animal|pet|it|them)\b/,
+    /\b(bird|cat|dog|animal|pet)\b.*\b(want(?:ed)?|going|plan(?:ning)?) to (kill|hurt|harm|poison)\b.*\b(it|them|that|bird|cat|dog|animal|pet)?\b/,
     /\bunsafe medical advice\b/,
     /\bdon'?t call emergency\b/,
     /\bignore.*doctor\b/,

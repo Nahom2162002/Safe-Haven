@@ -6,10 +6,11 @@ import {
   determineAppliedPolicy,
   isHumanReviewRequired,
 } from "./policy";
-import { calculateRiskScore, mapScoreToRiskLevel } from "./risk";
+import { calculateRiskScore, getHarmRules, mapScoreToRiskLevel } from "./risk";
 import { detectLockedRules } from "./rules/detectLockedRules";
 import { runRightsReview } from "./rightsReview";
 import type {
+  DecisionContext,
   DecisionEngineOptions,
   DecisionResult,
   DecisionTraceStep,
@@ -29,13 +30,21 @@ export function childSafetyDecision(
   const now = options.now ?? (() => new Date());
   const makeEventId = options.createEventId ?? defaultCreateEventId;
   const appliedPolicy = determineAppliedPolicy(user, service);
-  const matchedRules = detectLockedRules(input, user, service);
+  const context = buildDecisionContext(user, service, appliedPolicy);
+  const matchedRules = filterRulesForContext(
+    detectLockedRules(input),
+    input,
+    appliedPolicy
+  );
+  const harmRules = getHarmRules(matchedRules);
   const riskScore = calculateRiskScore(matchedRules, input, user);
   const riskLevel = mapScoreToRiskLevel(riskScore);
 
-  let action = matchedRules.length
+  let action = harmRules.length
     ? chooseAction(matchedRules, riskLevel, appliedPolicy)
-    : "ALLOW";
+    : appliedPolicy === "child_safe_default"
+      ? "ALLOW_WITH_GUIDANCE"
+      : "ALLOW";
 
   let retentionMode = chooseRetentionMode(
     matchedRules,
@@ -71,8 +80,7 @@ export function childSafetyDecision(
   });
   const decisionTrace = buildDecisionTrace({
     input,
-    user,
-    service,
+    context,
     appliedPolicy,
     matchedRules,
     riskScore,
@@ -81,18 +89,19 @@ export function childSafetyDecision(
     retentionMode,
     rightsReviewPasses: rightsReview.passes,
     humanReviewRequired,
-    auditRequired: matchedRules.length > 0,
+    auditRequired: harmRules.length > 0,
   });
 
   return {
     decision: action,
     appliedPolicy,
+    context,
     matchedRules,
     riskScore,
     riskLevel,
     retentionMode,
     humanReviewRequired,
-    auditRequired: matchedRules.length > 0,
+    auditRequired: harmRules.length > 0,
     audit,
     explanation: buildExplanation(
       matchedRules,
@@ -105,10 +114,55 @@ export function childSafetyDecision(
   };
 }
 
+function filterRulesForContext(
+  matchedRules: DecisionResult["matchedRules"],
+  input: InputEvent,
+  appliedPolicy: string
+): DecisionResult["matchedRules"] {
+  const childSafeContext =
+    appliedPolicy === "child_safe_policy" ||
+    appliedPolicy === "child_safe_default";
+  const textMentionsChild = mentionsChildOrTeen(input.text);
+
+  return matchedRules.filter((rule) => {
+    if (rule.id === "R7") {
+      return childSafeContext;
+    }
+
+    if (rule.id === "R2") {
+      return childSafeContext || textMentionsChild;
+    }
+
+    return true;
+  });
+}
+
+function mentionsChildOrTeen(text: string): boolean {
+  return /\b(child|children|kid|kids|minor|underage|teen|teenager|young person)\b/i.test(
+    text
+  );
+}
+
+function buildDecisionContext(
+  user: UserContext,
+  service: ServiceContext,
+  appliedPolicy: string
+): DecisionContext {
+  return {
+    ageGroup: user.ageGroup,
+    vulnerability: user.vulnerability,
+    serviceChildAccess: service.childAccess,
+    appType: service.appType,
+    appliedPolicy,
+    childSafeDefaultApplied: appliedPolicy === "child_safe_default",
+    childSafePolicyApplied: appliedPolicy === "child_safe_policy",
+    adultPolicyApplied: appliedPolicy === "adult_policy_plus_universal_safety",
+  };
+}
+
 function buildDecisionTrace({
   input,
-  user,
-  service,
+  context,
   appliedPolicy,
   matchedRules,
   riskScore,
@@ -120,8 +174,7 @@ function buildDecisionTrace({
   auditRequired,
 }: {
   input: InputEvent;
-  user: UserContext;
-  service: ServiceContext;
+  context: DecisionContext;
   appliedPolicy: string;
   matchedRules: DecisionResult["matchedRules"];
   riskScore: number;
@@ -148,7 +201,7 @@ function buildDecisionTrace({
       id: "context",
       label: "1. Context policy",
       status: "pass",
-      detail: `${appliedPolicy} selected for ${user.ageGroup} user in ${service.childAccess} ${service.appType} service.`,
+      detail: `${appliedPolicy} selected for ${context.ageGroup} user in ${context.serviceChildAccess} ${context.appType} service.`,
     },
     {
       id: "rule-match",

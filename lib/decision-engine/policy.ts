@@ -7,13 +7,19 @@ import type {
   ServiceContext,
   UserContext,
 } from "./types";
+import { getHarmRules } from "./risk";
 
 export function determineAppliedPolicy(
   user: UserContext,
   service: ServiceContext
 ): string {
+  if (service.childAccess === "child_directed") {
+    return user.ageGroup === "unknown"
+      ? "child_safe_default"
+      : "child_safe_policy";
+  }
+
   const childAccessible =
-    service.childAccess === "child_directed" ||
     service.childAccess === "mixed_audience" ||
     service.childAccess === "unknown";
 
@@ -40,7 +46,13 @@ export function chooseAction(
   riskLevel: RiskLevel,
   appliedPolicy: string
 ): DecisionAction {
-  const ids = matchedRules.map((rule) => rule.id);
+  const ids = getHarmRules(matchedRules).map((rule) => rule.id);
+
+  if (ids.length === 0) {
+    return appliedPolicy === "child_safe_default"
+      ? "ALLOW_WITH_GUIDANCE"
+      : "ALLOW";
+  }
 
   if (ids.includes("R13")) {
     return riskLevel === "critical" ? "UNIVERSAL_REFUSAL" : "SAFE_REDIRECT";
@@ -95,9 +107,9 @@ export function chooseRetentionMode(
   action: DecisionAction,
   developerPolicy: DeveloperPolicy
 ): RetentionMode {
-  const ids = matchedRules.map((rule) => rule.id);
+  const ids = getHarmRules(matchedRules).map((rule) => rule.id);
 
-  if (action === "ALLOW") {
+  if (action === "ALLOW" || action === "ALLOW_WITH_GUIDANCE") {
     return "NO_CONTENT";
   }
 

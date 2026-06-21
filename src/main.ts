@@ -24,6 +24,21 @@ type CustomRule = RuleDefinition & {
 };
 
 type RuleFilter = "all" | "locked" | "custom" | "enabled" | "disabled";
+type AppView = "rules" | "tester";
+
+type DecisionPathBranch = {
+  id: string;
+  label: string;
+  selected: boolean;
+  tone: "pass" | "review" | "stop" | "inactive";
+  detail?: string;
+};
+
+type DecisionPathStage = {
+  id: string;
+  label: string;
+  branches: DecisionPathBranch[];
+};
 
 const STORAGE_KEY = "safe-haven-custom-rules";
 
@@ -34,6 +49,7 @@ if (!app) {
 }
 
 let customRules = loadCustomRules();
+let activeView: AppView = "rules";
 let activeFilter: RuleFilter = "all";
 let searchTerm = "";
 let pendingDeleteRuleId: CustomRule["id"] | null = null;
@@ -43,25 +59,35 @@ app.innerHTML = `
     <header class="topbar">
       <div>
         <p class="eyebrow">Safe Haven</p>
-        <h1>Rules Dashboard</h1>
+        <h1>Safety Console</h1>
       </div>
-      <div class="summary-strip" aria-label="Rule summary">
-        <div>
-          <span data-count="locked">0</span>
-          <small>Locked</small>
-        </div>
-        <div>
-          <span data-count="custom">0</span>
-          <small>Custom</small>
-        </div>
-        <div>
-          <span data-count="enabled">0</span>
-          <small>Enabled</small>
+      <div class="topbar-actions">
+        <nav class="app-tabs" aria-label="Main sections">
+          <button class="app-tab is-active" type="button" data-view="rules">
+            Rules
+          </button>
+          <button class="app-tab" type="button" data-view="tester">
+            Prompt Tester
+          </button>
+        </nav>
+        <div class="summary-strip" aria-label="Rule summary">
+          <div>
+            <span data-count="locked">0</span>
+            <small>Locked</small>
+          </div>
+          <div>
+            <span data-count="custom">0</span>
+            <small>Custom</small>
+          </div>
+          <div>
+            <span data-count="enabled">0</span>
+            <small>Enabled</small>
+          </div>
         </div>
       </div>
     </header>
 
-    <section class="workspace">
+    <section class="workspace view-panel is-active" data-panel="rules">
       <aside class="rule-composer" aria-labelledby="add-rule-title">
         <h2 id="add-rule-title">Add Rule</h2>
         <form id="ruleForm">
@@ -137,7 +163,7 @@ app.innerHTML = `
       </section>
     </section>
 
-    <section class="prompt-tester" aria-labelledby="prompt-tester-title">
+    <section class="prompt-tester view-panel" data-panel="tester" aria-labelledby="prompt-tester-title">
       <div class="prompt-tester-header">
         <div>
           <p class="eyebrow">Prompt Tester</p>
@@ -271,6 +297,12 @@ app.innerHTML = `
           </div>
         </section>
       </div>
+
+      <section class="decision-path-output" aria-live="polite" aria-label="Decision path">
+        <div id="decisionPathResult" class="decision-path-empty">
+          Run a prompt to see the full decision path.
+        </div>
+      </section>
     </section>
   </main>
 
@@ -311,6 +343,8 @@ const deleteModalText = getElement<HTMLParagraphElement>("#deleteModalText");
 const cancelDelete = getElement<HTMLButtonElement>("#cancelDelete");
 const confirmDelete = getElement<HTMLButtonElement>("#confirmDelete");
 const tabs = Array.from(document.querySelectorAll<HTMLButtonElement>(".tab"));
+const appTabs = Array.from(document.querySelectorAll<HTMLButtonElement>(".app-tab"));
+const viewPanels = Array.from(document.querySelectorAll<HTMLElement>(".view-panel"));
 const promptForm = getElement<HTMLFormElement>("#promptForm");
 const promptText = getElement<HTMLTextAreaElement>("#promptText");
 const rubricCaseSelect = getElement<HTMLSelectElement>("#rubricCase");
@@ -328,6 +362,7 @@ const involvesLocationOrPII = getElement<HTMLInputElement>("#involvesLocationOrP
 const couldEnableHarm = getElement<HTMLInputElement>("#couldEnableHarm");
 const runRubric = getElement<HTMLButtonElement>("#runRubric");
 const chatbotResult = getElement<HTMLDivElement>("#chatbotResult");
+const decisionPathResult = getElement<HTMLDivElement>("#decisionPathResult");
 
 populateRubricCases();
 
@@ -356,6 +391,13 @@ tabs.forEach((tab) => {
     activeFilter = tab.dataset.filter as RuleFilter;
     tabs.forEach((item) => item.classList.toggle("is-active", item === tab));
     render();
+  });
+});
+
+appTabs.forEach((tab) => {
+  tab.addEventListener("click", () => {
+    activeView = tab.dataset.view as AppView;
+    renderView();
   });
 });
 
@@ -418,6 +460,15 @@ function populateRubricCases(): void {
     option.value = rubricCase.id;
     option.textContent = rubricCase.label;
     rubricCaseSelect.append(option);
+  });
+}
+
+function renderView(): void {
+  appTabs.forEach((tab) => {
+    tab.classList.toggle("is-active", tab.dataset.view === activeView);
+  });
+  viewPanels.forEach((panel) => {
+    panel.classList.toggle("is-active", panel.dataset.panel === activeView);
   });
 }
 
@@ -518,6 +569,9 @@ function runRubricSuite(): void {
 
   chatbotResult.replaceChildren();
   chatbotResult.className = "chatbot-result";
+  decisionPathResult.replaceChildren();
+  decisionPathResult.className = "decision-path-empty";
+  decisionPathResult.textContent = "Run an individual prompt to see the full decision path.";
 
   const title = document.createElement("h3");
   title.textContent = `Rubric suite: ${passedCount}/${suiteResults.length} passed`;
@@ -596,6 +650,7 @@ function renderPromptResult(
   appendMetric(summary, "Risk", result.riskLevel);
   appendMetric(summary, "Score", String(result.riskScore));
   appendMetric(summary, "Policy", result.appliedPolicy);
+  appendMetric(summary, "Age context", result.context.ageGroup);
   appendMetric(summary, "Retention", result.retentionMode);
   appendMetric(summary, "Audit", result.auditRequired ? "required" : "not required");
   appendMetric(
@@ -605,18 +660,49 @@ function renderPromptResult(
   );
   chatbotResult.append(summary);
 
-  const matchedRules = document.createElement("div");
-  matchedRules.className = "matched-rules";
+  const explanation = document.createElement("div");
+  explanation.className = "decision-explanation";
 
-  const matchedTitle = document.createElement("h4");
-  matchedTitle.textContent = "Matched rules";
-  matchedRules.append(matchedTitle);
+  const explanationTitle = document.createElement("h4");
+  explanationTitle.textContent = "Decision explanation";
+  explanation.append(explanationTitle);
+
+  const contextSection = document.createElement("section");
+  contextSection.className = "explanation-section context";
+
+  const contextHeading = document.createElement("strong");
+  contextHeading.textContent = "Context";
+
+  const contextText = document.createElement("p");
+  contextText.textContent = `${result.context.ageGroup} user, ${
+    result.context.serviceChildAccess
+  } ${result.context.appType} service. ${
+    result.context.childSafeDefaultApplied
+      ? "Child-safe default applied because age is unknown."
+      : result.context.childSafePolicyApplied
+        ? "Child-safe policy applied."
+        : result.context.adultPolicyApplied
+          ? "Adult policy plus universal safety applied."
+          : "General AI safety policy applied."
+  }`;
+  contextSection.append(contextHeading, contextText);
+  explanation.append(contextSection);
+
+  const rulesSection = document.createElement("section");
+  rulesSection.className = "explanation-section rules";
+
+  const rulesHeading = document.createElement("strong");
+  rulesHeading.textContent = "Matched harm rules";
+  rulesSection.append(rulesHeading);
 
   if (result.matchedRules.length === 0) {
     const empty = document.createElement("p");
-    empty.textContent = "No locked rules matched this prompt.";
-    matchedRules.append(empty);
+    empty.textContent = "No locked harm rules matched this prompt.";
+    rulesSection.append(empty);
   } else {
+    const ruleList = document.createElement("div");
+    ruleList.className = "matched-rules-list";
+
     result.matchedRules.forEach((rule) => {
       const ruleItem = document.createElement("article");
       ruleItem.className = "matched-rule";
@@ -627,28 +713,31 @@ function renderPromptResult(
       const ruleDescription = document.createElement("p");
       ruleDescription.textContent = rule.matchReason
         ? `${rule.description} ${rule.matchReason}`
-        : rule.description;
+          : rule.description;
 
       ruleItem.append(ruleHeading, ruleDescription);
-      matchedRules.append(ruleItem);
+      ruleList.append(ruleItem);
     });
+
+    rulesSection.append(ruleList);
   }
 
-  chatbotResult.append(matchedRules);
+  explanation.append(rulesSection);
 
-  const explanation = document.createElement("div");
-  explanation.className = "explanation-box";
+  const summarySection = document.createElement("section");
+  summarySection.className = "explanation-section summary";
 
-  const explanationTitle = document.createElement("h4");
-  explanationTitle.textContent = "Chatbot explanation";
+  const summaryHeading = document.createElement("strong");
+  summaryHeading.textContent = "Chatbot explanation";
 
   const explanationText = document.createElement("p");
   explanationText.textContent = result.explanation;
 
-  explanation.append(explanationTitle, explanationText);
+  summarySection.append(summaryHeading, explanationText);
+  explanation.append(summarySection);
   chatbotResult.append(explanation);
 
-  renderDecisionTrace(result);
+  renderDecisionPath(result);
 
   if (evaluation && rubricCase) {
     renderRubricEvaluation(evaluation, rubricCase);
@@ -700,41 +789,306 @@ function renderRubricEvaluation(
   chatbotResult.append(rubric);
 }
 
-function renderDecisionTrace(result: DecisionResult): void {
-  const trace = document.createElement("section");
-  trace.className = "decision-tree";
+function renderDecisionPath(result: DecisionResult): void {
+  decisionPathResult.replaceChildren();
+  decisionPathResult.className = "decision-path-result";
+
+  const path = document.createElement("div");
+  path.className = "decision-path";
 
   const title = document.createElement("h4");
-  title.textContent = "Decision tree trace";
-  trace.append(title);
+  title.textContent = "Decision path";
+  path.append(title);
 
-  const list = document.createElement("ol");
-  list.className = "decision-steps";
+  const stages = document.createElement("div");
+  stages.className = "decision-path-stages";
 
-  result.decisionTrace.forEach((step) => {
-    const item = document.createElement("li");
-    item.className = `decision-step ${step.status}`;
+  buildDecisionPathStages(result).forEach((stage) => {
+    const stageElement = document.createElement("article");
+    stageElement.className = "path-stage";
 
-    const marker = document.createElement("span");
-    marker.className = "step-marker";
-    marker.textContent =
-      step.status === "pass" ? "PASS" : step.status === "review" ? "REVIEW" : "STOP";
+    const stageTitle = document.createElement("h5");
+    stageTitle.textContent = stage.label;
 
-    const content = document.createElement("div");
+    const branchList = document.createElement("div");
+    branchList.className = "path-branches";
 
-    const label = document.createElement("strong");
-    label.textContent = step.label;
+    stage.branches.forEach((branch) => {
+      const branchElement = document.createElement("div");
+      branchElement.className = `path-branch ${branch.tone}`;
+      branchElement.classList.toggle("is-selected", branch.selected);
 
-    const detail = document.createElement("p");
-    detail.textContent = step.detail;
+      const branchLabel = document.createElement("strong");
+      branchLabel.textContent = branch.label;
+      branchElement.append(branchLabel);
 
-    content.append(label, detail);
-    item.append(marker, content);
-    list.append(item);
+      if (branch.detail) {
+        const branchDetail = document.createElement("p");
+        branchDetail.textContent = branch.detail;
+        branchElement.append(branchDetail);
+      }
+
+      branchList.append(branchElement);
+    });
+
+    stageElement.append(stageTitle, branchList);
+    stages.append(stageElement);
   });
 
-  trace.append(list);
-  chatbotResult.append(trace);
+  path.append(stages);
+  decisionPathResult.append(path);
+}
+
+function buildDecisionPathStages(result: DecisionResult): DecisionPathStage[] {
+  const matchedRuleIds = result.matchedRules.map((rule) => rule.id);
+  const hasCriticalChildRisk = matchedRuleIds.some((id) =>
+    ["R1", "R2", "R5", "R6", "R12"].includes(id)
+  );
+  const hasGovernanceReview = matchedRuleIds.includes("R15");
+  const hasUniversalSevereHarm = matchedRuleIds.includes("R13");
+  const hasAgeInappropriateContent = matchedRuleIds.includes("R7");
+
+  return [
+    {
+      id: "context",
+      label: "Context Policy",
+      branches: [
+        pathBranch(
+          "child_safe_default",
+          "Child-safe default",
+          result.appliedPolicy === "child_safe_default",
+          "pass",
+          "Unknown-age user in a child-accessible service."
+        ),
+        pathBranch(
+          "child_safe_policy",
+          "Child-safe policy",
+          result.appliedPolicy === "child_safe_policy",
+          "pass",
+          "Child or teen user in a child-accessible service."
+        ),
+        pathBranch(
+          "adult_policy_plus_universal_safety",
+          "Adult + universal safety",
+          result.appliedPolicy === "adult_policy_plus_universal_safety",
+          "pass",
+          "Verified adult context, universal safety still applies."
+        ),
+        pathBranch(
+          "general_ai_safety",
+          "General AI safety",
+          result.appliedPolicy === "general_ai_safety",
+          "pass",
+          "Default safety policy for non-child-specific contexts."
+        ),
+      ],
+    },
+    {
+      id: "rule-match",
+      label: "Rule Match",
+      branches: [
+        pathBranch(
+          "no_harm",
+          "No harm rules",
+          result.matchedRules.length === 0,
+          "pass",
+          "Continue without escalation."
+        ),
+        pathBranch(
+          "universal_severe_harm",
+          "Universal severe harm",
+          hasUniversalSevereHarm,
+          "stop",
+          "Weapons, explosives, or severe physical danger."
+        ),
+        pathBranch(
+          "critical_child_risk",
+          "Critical child safety",
+          hasCriticalChildRisk,
+          "stop",
+          "Self-harm, exploitation, abuse, grooming, or violent recruitment."
+        ),
+        pathBranch(
+          "age_inappropriate",
+          "Age-inappropriate content",
+          hasAgeInappropriateContent,
+          "review",
+          "Sexual or graphic content in a child-safe context."
+        ),
+        pathBranch(
+          "governance_review",
+          "Governance review",
+          hasGovernanceReview,
+          "review",
+          "Audit, oversight, retention, or reporting concern."
+        ),
+        pathBranch(
+          "other_harm",
+          "Other harm rule",
+          result.matchedRules.length > 0 &&
+            !hasUniversalSevereHarm &&
+            !hasCriticalChildRisk &&
+            !hasAgeInappropriateContent &&
+            !hasGovernanceReview,
+          "review",
+          "Matched a high or medium-risk locked rule."
+        ),
+      ],
+    },
+    {
+      id: "risk",
+      label: "Risk Level",
+      branches: [
+        pathBranch("low", "Low", result.riskLevel === "low", "pass", "0-20"),
+        pathBranch("medium", "Medium", result.riskLevel === "medium", "review", "21-40"),
+        pathBranch("high", "High", result.riskLevel === "high", "review", "41-70"),
+        pathBranch(
+          "critical",
+          "Critical",
+          result.riskLevel === "critical",
+          "stop",
+          "71-100"
+        ),
+      ],
+    },
+    {
+      id: "action",
+      label: "Action",
+      branches: [
+        pathBranch("ALLOW", "Allow", result.decision === "ALLOW", "pass"),
+        pathBranch(
+          "ALLOW_WITH_GUIDANCE",
+          "Allow with guidance",
+          result.decision === "ALLOW_WITH_GUIDANCE",
+          "pass"
+        ),
+        pathBranch(
+          "SAFE_REDIRECT",
+          "Safe redirect",
+          result.decision === "SAFE_REDIRECT",
+          "review"
+        ),
+        pathBranch(
+          "AGE_APPROPRIATE_REFUSAL",
+          "Age-appropriate refusal",
+          result.decision === "AGE_APPROPRIATE_REFUSAL",
+          "stop"
+        ),
+        pathBranch(
+          "HUMAN_REVIEW",
+          "Human review",
+          result.decision === "HUMAN_REVIEW",
+          "review"
+        ),
+        pathBranch(
+          "URGENT_ESCALATION",
+          "Urgent escalation",
+          result.decision === "URGENT_ESCALATION",
+          "stop"
+        ),
+        pathBranch(
+          "UNIVERSAL_REFUSAL",
+          "Universal refusal",
+          result.decision === "UNIVERSAL_REFUSAL",
+          "stop"
+        ),
+        pathBranch(
+          "REQUIRE_RIGHTS_REVIEW",
+          "Rights review",
+          result.decision === "REQUIRE_RIGHTS_REVIEW",
+          "review"
+        ),
+        pathBranch(
+          "REQUIRE_DEVELOPER_JUSTIFICATION",
+          "Developer justification",
+          result.decision === "REQUIRE_DEVELOPER_JUSTIFICATION",
+          "review"
+        ),
+        pathBranch(
+          "BLOCK_AND_AUDIT",
+          "Block and audit",
+          result.decision === "BLOCK_AND_AUDIT",
+          "stop"
+        ),
+      ],
+    },
+    {
+      id: "retention",
+      label: "Retention",
+      branches: [
+        pathBranch(
+          "NO_CONTENT",
+          "No content",
+          result.retentionMode === "NO_CONTENT",
+          "pass"
+        ),
+        pathBranch(
+          "METADATA_ONLY",
+          "Metadata only",
+          result.retentionMode === "METADATA_ONLY",
+          "pass"
+        ),
+        pathBranch(
+          "REDACTED_EXCERPT",
+          "Redacted excerpt",
+          result.retentionMode === "REDACTED_EXCERPT",
+          "review"
+        ),
+        pathBranch(
+          "FULL_CONTENT_REQUIRES_JUSTIFICATION",
+          "Full content",
+          result.retentionMode === "FULL_CONTENT_REQUIRES_JUSTIFICATION",
+          "stop"
+        ),
+      ],
+    },
+    {
+      id: "oversight",
+      label: "Oversight",
+      branches: [
+        pathBranch(
+          "no_audit",
+          "No audit",
+          !result.auditRequired && !result.humanReviewRequired,
+          "pass"
+        ),
+        pathBranch(
+          "audit_only",
+          "Audit only",
+          result.auditRequired && !result.humanReviewRequired,
+          "review"
+        ),
+        pathBranch(
+          "human_review",
+          "Human review",
+          result.humanReviewRequired && result.decision !== "URGENT_ESCALATION",
+          "review"
+        ),
+        pathBranch(
+          "urgent_escalation",
+          "Urgent escalation",
+          result.decision === "URGENT_ESCALATION",
+          "stop"
+        ),
+      ],
+    },
+  ];
+}
+
+function pathBranch(
+  id: string,
+  label: string,
+  selected: boolean,
+  selectedTone: DecisionPathBranch["tone"],
+  detail?: string
+): DecisionPathBranch {
+  return {
+    id,
+    label,
+    selected,
+    tone: selected ? selectedTone : "inactive",
+    detail,
+  };
 }
 
 function loadCustomRules(): CustomRule[] {

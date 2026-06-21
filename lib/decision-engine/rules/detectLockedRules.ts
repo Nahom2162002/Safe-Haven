@@ -2,8 +2,6 @@ import type {
   InputEvent,
   LockedRuleId,
   MatchedRule,
-  ServiceContext,
-  UserContext,
 } from "../types";
 import { LOCKED_RULES } from "./lockedRules";
 import { LOCKED_RULE_PATTERNS } from "./patterns";
@@ -20,19 +18,10 @@ function matchedRule(id: LockedRuleId, matchReason?: string): MatchedRule {
 }
 
 export function detectLockedRules(
-  input: InputEvent,
-  user: UserContext,
-  service: ServiceContext
+  input: InputEvent
 ): MatchedRule[] {
   const text = input.text.toLowerCase();
   const matches: MatchedRule[] = [];
-
-  if (
-    user.ageGroup === "unknown" &&
-    service.childAccess !== "verified_adult_only"
-  ) {
-    matches.push(matchedRule("R0", "Unknown-age user in child-accessible service."));
-  }
 
   for (const [id, patterns] of Object.entries(LOCKED_RULE_PATTERNS)) {
     const ruleId = id as LockedRuleId;
