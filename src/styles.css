@@ -680,6 +680,13 @@ h3 {
   gap: 12px;
 }
 
+.decision-explanation-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .result-header h3,
 .result-header h4,
 .decision-explanation h4 {
@@ -716,6 +723,28 @@ h3 {
 .status-badge.fail {
   color: #fff;
   background: var(--danger);
+}
+
+.result-source-tags {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+.result-source-tag {
+  border: 1px solid rgba(23, 107, 84, 0.24);
+  border-radius: 999px;
+  padding: 6px 10px;
+  color: var(--accent-dark);
+  background: #eef7f2;
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-decoration: none;
+}
+
+.result-source-tag:hover {
+  border-color: var(--accent);
 }
 
 .result-summary {

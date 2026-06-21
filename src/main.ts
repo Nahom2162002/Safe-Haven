@@ -663,9 +663,17 @@ function renderPromptResult(
   const explanation = document.createElement("div");
   explanation.className = "decision-explanation";
 
+  const explanationHeader = document.createElement("div");
+  explanationHeader.className = "decision-explanation-header";
+
   const explanationTitle = document.createElement("h4");
   explanationTitle.textContent = "Decision explanation";
-  explanation.append(explanationTitle);
+  explanationHeader.append(explanationTitle);
+
+  const explanationTags = createResultSourceTags(result);
+  if (explanationTags) explanationHeader.append(explanationTags);
+
+  explanation.append(explanationHeader);
 
   const contextSection = document.createElement("section");
   contextSection.className = "explanation-section context";
@@ -1318,6 +1326,36 @@ function createSourceChips(rule: RuleDefinition): HTMLElement | null {
   chips.append(principles);
 
   return chips;
+}
+
+function createResultSourceTags(result: DecisionResult): HTMLElement | null {
+  const references = result.matchedRules.flatMap(
+    (rule) => rule.complianceReferences ?? []
+  );
+
+  if (references.length === 0) return null;
+
+  const tags = document.createElement("div");
+  tags.className = "result-source-tags";
+
+  const unique = new Map<string, (typeof references)[number]>();
+
+  references.forEach((reference) => {
+    unique.set(`${reference.publisher}:${reference.url}`, reference);
+  });
+
+  Array.from(unique.values()).forEach((reference) => {
+    const tag = document.createElement("a");
+    tag.className = "result-source-tag";
+    tag.href = reference.url;
+    tag.target = "_blank";
+    tag.rel = "noreferrer";
+    tag.textContent = reference.publisher;
+    tag.title = `${reference.title} - ${reference.principle}`;
+    tags.append(tag);
+  });
+
+  return tags;
 }
 
 function appendEvidenceRow(parent: HTMLElement, label: string, value: string): void {
