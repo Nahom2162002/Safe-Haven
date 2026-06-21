@@ -92,11 +92,22 @@ export interface RuleDefinition {
   id: RuleId;
   label: string;
   description: string;
+  riskType?: string;
+  whyRisk?: string;
+  userGuidance?: string;
+  complianceReferences?: ComplianceReference[];
   baseRisk: RiskLevel;
   category: string;
   locked: boolean;
   enabled: boolean;
   universal?: boolean;
+}
+
+export interface ComplianceReference {
+  title: string;
+  publisher: string;
+  url: string;
+  relevance: string;
 }
 
 export interface MatchedRule extends RuleDefinition {

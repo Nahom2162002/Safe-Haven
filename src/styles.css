@@ -736,8 +736,37 @@ h3 {
 }
 
 .matched-rule {
+  display: grid;
+  gap: 8px;
   border-left: 3px solid var(--accent);
   padding-left: 10px;
+}
+
+.rule-evidence-line {
+  font-size: 0.9rem;
+}
+
+.source-list {
+  display: grid;
+  gap: 7px;
+  margin: 2px 0 0;
+  padding-left: 18px;
+}
+
+.source-list li {
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.source-list a {
+  display: block;
+  color: var(--accent-dark);
+  font-weight: 800;
+}
+
+.source-list span {
+  display: block;
+  font-size: 0.82rem;
 }
 
 .explanation-section {

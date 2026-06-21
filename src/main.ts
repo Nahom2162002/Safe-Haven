@@ -716,6 +716,50 @@ function renderPromptResult(
           : rule.description;
 
       ruleItem.append(ruleHeading, ruleDescription);
+
+      if (rule.riskType) {
+        const riskType = document.createElement("p");
+        riskType.className = "rule-evidence-line";
+        riskType.textContent = `Risk type: ${rule.riskType}`;
+        ruleItem.append(riskType);
+      }
+
+      if (rule.whyRisk) {
+        const whyRisk = document.createElement("p");
+        whyRisk.className = "rule-evidence-line";
+        whyRisk.textContent = `Why this is a risk: ${rule.whyRisk}`;
+        ruleItem.append(whyRisk);
+      }
+
+      if (rule.userGuidance) {
+        const guidance = document.createElement("p");
+        guidance.className = "rule-evidence-line";
+        guidance.textContent = `Suggested next step: ${rule.userGuidance}`;
+        ruleItem.append(guidance);
+      }
+
+      if (rule.complianceReferences?.length) {
+        const sourceList = document.createElement("ul");
+        sourceList.className = "source-list";
+
+        rule.complianceReferences.forEach((reference) => {
+          const item = document.createElement("li");
+          const link = document.createElement("a");
+          link.href = reference.url;
+          link.target = "_blank";
+          link.rel = "noreferrer";
+          link.textContent = `${reference.publisher}: ${reference.title}`;
+
+          const relevance = document.createElement("span");
+          relevance.textContent = reference.relevance;
+
+          item.append(link, relevance);
+          sourceList.append(item);
+        });
+
+        ruleItem.append(sourceList);
+      }
+
       ruleList.append(ruleItem);
     });
 
