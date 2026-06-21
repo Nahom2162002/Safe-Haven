@@ -132,6 +132,13 @@ export interface AuditEvent {
   policyVersion: string;
 }
 
+export interface DecisionTraceStep {
+  id: string;
+  label: string;
+  status: "pass" | "review" | "stop";
+  detail: string;
+}
+
 export interface DecisionResult {
   decision: DecisionAction;
   appliedPolicy: string;
@@ -143,6 +150,7 @@ export interface DecisionResult {
   auditRequired: boolean;
   audit: AuditEvent;
   explanation: string;
+  decisionTrace: DecisionTraceStep[];
 }
 
 export interface DecisionEngineOptions {

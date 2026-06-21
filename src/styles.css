@@ -657,6 +657,7 @@ h3 {
 
 .matched-rules,
 .explanation-box,
+.decision-tree,
 .rubric-result,
 .suite-row {
   display: grid;
@@ -670,6 +671,7 @@ h3 {
 .matched-rules p,
 .matched-rule p,
 .explanation-box p,
+.decision-step p,
 .suite-row p {
   margin-bottom: 0;
   color: var(--muted);
@@ -679,6 +681,58 @@ h3 {
 .matched-rule {
   border-left: 3px solid var(--accent);
   padding-left: 10px;
+}
+
+.decision-tree h4 {
+  margin-bottom: 0;
+}
+
+.decision-steps {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.decision-step {
+  display: grid;
+  grid-template-columns: 74px minmax(0, 1fr);
+  gap: 12px;
+  position: relative;
+  border-left: 3px solid var(--line);
+  padding-left: 12px;
+}
+
+.decision-step.pass {
+  border-left-color: var(--accent);
+}
+
+.decision-step.review {
+  border-left-color: var(--warning);
+}
+
+.decision-step.stop {
+  border-left-color: var(--danger);
+}
+
+.step-marker {
+  align-self: start;
+  border-radius: 999px;
+  padding: 5px 8px;
+  color: #fff;
+  background: var(--accent);
+  font-size: 0.68rem;
+  font-weight: 900;
+  text-align: center;
+}
+
+.decision-step.review .step-marker {
+  background: var(--warning);
+}
+
+.decision-step.stop .step-marker {
+  background: var(--danger);
 }
 
 .check-list {
@@ -734,6 +788,7 @@ h3 {
   .chatbot-grid,
   .context-grid,
   .flag-grid,
+  .decision-step,
   .result-summary {
     grid-template-columns: 1fr;
   }

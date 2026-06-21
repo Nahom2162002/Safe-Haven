@@ -648,6 +648,8 @@ function renderPromptResult(
   explanation.append(explanationTitle, explanationText);
   chatbotResult.append(explanation);
 
+  renderDecisionTrace(result);
+
   if (evaluation && rubricCase) {
     renderRubricEvaluation(evaluation, rubricCase);
   }
@@ -696,6 +698,43 @@ function renderRubricEvaluation(
 
   rubric.append(list);
   chatbotResult.append(rubric);
+}
+
+function renderDecisionTrace(result: DecisionResult): void {
+  const trace = document.createElement("section");
+  trace.className = "decision-tree";
+
+  const title = document.createElement("h4");
+  title.textContent = "Decision tree trace";
+  trace.append(title);
+
+  const list = document.createElement("ol");
+  list.className = "decision-steps";
+
+  result.decisionTrace.forEach((step) => {
+    const item = document.createElement("li");
+    item.className = `decision-step ${step.status}`;
+
+    const marker = document.createElement("span");
+    marker.className = "step-marker";
+    marker.textContent =
+      step.status === "pass" ? "PASS" : step.status === "review" ? "REVIEW" : "STOP";
+
+    const content = document.createElement("div");
+
+    const label = document.createElement("strong");
+    label.textContent = step.label;
+
+    const detail = document.createElement("p");
+    detail.textContent = step.detail;
+
+    content.append(label, detail);
+    item.append(marker, content);
+    list.append(item);
+  });
+
+  trace.append(list);
+  chatbotResult.append(trace);
 }
 
 function loadCustomRules(): CustomRule[] {
