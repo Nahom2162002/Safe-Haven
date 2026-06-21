@@ -41,6 +41,7 @@ type DecisionPathStage = {
 };
 
 const STORAGE_KEY = "safe-haven-custom-rules";
+const AUDIT_STORAGE_KEY = "safe-haven-audit-log";
 
 const app = document.querySelector<HTMLDivElement>("#app");
 
@@ -49,6 +50,7 @@ if (!app) {
 }
 
 let customRules = loadCustomRules();
+let auditLog = loadAuditLog();
 let activeView: AppView = "rules";
 let activeFilter: RuleFilter = "all";
 let searchTerm = "";
@@ -288,6 +290,13 @@ app.innerHTML = `
             <button class="secondary-action" type="button" id="runRubric">
               Run rubric suite
             </button>
+            <button class="secondary-action" type="button" id="exportAudit">
+              Export audit JSONL
+            </button>
+            <button class="secondary-action" type="button" id="clearAudit">
+              Clear audit log
+            </button>
+            <span class="audit-count" id="auditCount">0 audit entries</span>
           </div>
         </form>
 
@@ -361,10 +370,14 @@ const involvesPrivateImages = getElement<HTMLInputElement>("#involvesPrivateImag
 const involvesLocationOrPII = getElement<HTMLInputElement>("#involvesLocationOrPII");
 const couldEnableHarm = getElement<HTMLInputElement>("#couldEnableHarm");
 const runRubric = getElement<HTMLButtonElement>("#runRubric");
+const exportAudit = getElement<HTMLButtonElement>("#exportAudit");
+const clearAudit = getElement<HTMLButtonElement>("#clearAudit");
+const auditCount = getElement<HTMLSpanElement>("#auditCount");
 const chatbotResult = getElement<HTMLDivElement>("#chatbotResult");
 const decisionPathResult = getElement<HTMLDivElement>("#decisionPathResult");
 
 populateRubricCases();
+renderAuditCount();
 
 form.addEventListener("submit", (event) => {
   event.preventDefault();
@@ -422,6 +435,16 @@ promptForm.addEventListener("submit", (event) => {
 
 runRubric.addEventListener("click", () => {
   runRubricSuite();
+});
+
+exportAudit.addEventListener("click", () => {
+  exportAuditJsonl();
+});
+
+clearAudit.addEventListener("click", () => {
+  auditLog = [];
+  saveAuditLog();
+  renderAuditCount();
 });
 
 cancelDelete.addEventListener("click", closeDeleteModal);
@@ -519,11 +542,14 @@ function getPromptContext(): PromptTestContext {
 }
 
 function runPromptCheck(rubricCase: PromptRubricCase | null): void {
-  const result = runDecision(promptText.value, getPromptContext());
+  const prompt = promptText.value;
+  const context = getPromptContext();
+  const result = runDecision(prompt, context);
   const evaluation = rubricCase
     ? evaluateRubricResult(result, rubricCase.expected)
     : null;
 
+  recordAuditEntry(prompt, context, result, evaluation, rubricCase);
   renderPromptResult(result, evaluation, rubricCase);
 }
 
@@ -622,6 +648,51 @@ function runRubricSuite(): void {
   });
 
   chatbotResult.append(list);
+}
+
+function recordAuditEntry(
+  prompt: string,
+  context: PromptTestContext,
+  result: DecisionResult,
+  evaluation: RubricEvaluation | null,
+  rubricCase: PromptRubricCase | null
+): void {
+  const entry = {
+    eventId: result.audit.eventId,
+    timestamp: result.audit.timestamp,
+    type: "prompt_test",
+    promptPreview: prompt.trim().slice(0, 180),
+    inputType: context.inputType,
+    context: result.context,
+    matchedRules: result.matchedRules.map((rule) => ({
+      id: rule.id,
+      label: rule.label,
+      category: rule.category,
+      riskType: rule.riskType,
+      principles:
+        rule.complianceReferences?.map((reference) => reference.principle) ?? [],
+      sources:
+        rule.complianceReferences?.map((reference) => ({
+          publisher: reference.publisher,
+          title: reference.title,
+          url: reference.url,
+        })) ?? [],
+    })),
+    riskScore: result.riskScore,
+    riskLevel: result.riskLevel,
+    decision: result.decision,
+    retentionMode: result.retentionMode,
+    auditRequired: result.auditRequired,
+    humanReviewRequired: result.humanReviewRequired,
+    rightsReview: result.audit.rightsReview,
+    rubricCase: rubricCase?.id ?? null,
+    rubricPassed: evaluation?.passed ?? null,
+    explanation: result.explanation,
+  };
+
+  auditLog = [...auditLog, entry];
+  saveAuditLog();
+  renderAuditCount();
 }
 
 function renderPromptResult(
@@ -1154,6 +1225,42 @@ function loadCustomRules(): CustomRule[] {
 
 function saveCustomRules(): void {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(customRules));
+}
+
+function loadAuditLog(): unknown[] {
+  try {
+    const saved = JSON.parse(localStorage.getItem(AUDIT_STORAGE_KEY) || "[]");
+    return Array.isArray(saved) ? saved : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveAuditLog(): void {
+  localStorage.setItem(AUDIT_STORAGE_KEY, JSON.stringify(auditLog));
+}
+
+function renderAuditCount(): void {
+  auditCount.textContent = `${auditLog.length} audit ${
+    auditLog.length === 1 ? "entry" : "entries"
+  }`;
+}
+
+function exportAuditJsonl(): void {
+  const jsonl = auditLog.map((entry) => JSON.stringify(entry)).join("\n");
+  const blob = new Blob([jsonl ? `${jsonl}\n` : ""], {
+    type: "application/jsonl",
+  });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+
+  link.href = url;
+  link.download = `safe-haven-audit-${new Date()
+    .toISOString()
+    .slice(0, 19)
+    .replaceAll(":", "-")}.jsonl`;
+  link.click();
+  URL.revokeObjectURL(url);
 }
 
 function createId(): string {

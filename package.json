@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "verify:opencode": "node scripts/verify-opencode.mjs",
+    "validate:audit": "node scripts/validate-audit-jsonl.mjs"
   },
   "devDependencies": {
     "typescript": "^5.5.4",

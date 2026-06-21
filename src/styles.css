@@ -627,7 +627,14 @@ h3 {
 .tester-actions {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 10px;
+}
+
+.audit-count {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 800;
 }
 
 .chatbot-output {

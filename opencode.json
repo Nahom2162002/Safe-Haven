@@ -1,0 +1,21 @@
+{
+  "agents": [
+    {
+      "name": "fairness-advisor",
+      "mode": "subagent",
+      "description": "Reviews Safe Haven changes for fairness, privacy, child-safety, cybersecurity, and human-oversight tradeoffs.",
+      "systemPromptFile": ".opencode/agent/fairness-advisor.md"
+    },
+    {
+      "name": "doc-generator",
+      "mode": "subagent",
+      "description": "Produces human-readable governance reports and audit summaries from Safe Haven decisions.",
+      "systemPromptFile": ".opencode/agent/doc-generator.md"
+    }
+  ],
+  "instructions": [
+    {
+      "file": "AGENTS.md"
+    }
+  ]
+}

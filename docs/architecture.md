@@ -1,21 +1,104 @@
-# Architecture
+# Safe Haven Architecture
 
-## Decision engine
+Safe Haven is a child-safety governance prototype for the Hackathon UN Tech Over
+2026 SpainGov challenge. It uses the UNICEF child-safety chatbot problem as a
+proxy case study for AI systems that classify children’s messages, assign risk
+scores, escalate cases, and decide how much sensitive conversation data to
+retain.
 
-The hackathon decision tree is implemented as a small domain module at
-`lib/decision-engine`. Keep this logic outside dashboard components so the same
-rules can later be reused by an API endpoint, background audit worker, or test
-suite.
+## System Diagram
+
+```text
+Developer request / prompt
+          │
+          ▼
+┌─────────────────────────────────────────────────────────────┐
+│ OpenCode governance layer                                   │
+│ - AGENTS.md instructions                                    │
+│ - fairness-advisor subagent                                 │
+│ - doc-generator subagent                                    │
+└──────────────────────┬──────────────────────────────────────┘
+                       │
+                       ▼
+┌─────────────────────────────────────────────────────────────┐
+│ Vite TypeScript frontend                                    │
+│ - Rules tab                                                 │
+│ - Prompt Tester tab                                         │
+│ - Decision path visualizer                                  │
+│ - Source-backed explanation UI                              │
+└──────────────────────┬──────────────────────────────────────┘
+                       │
+                       ▼
+┌─────────────────────────────────────────────────────────────┐
+│ Decision engine                                             │
+│ lib/decision-engine                                         │
+│                                                             │
+│ context → rules → risk → action → retention → rights review │
+└──────────────────────┬──────────────────────────────────────┘
+                       │
+                       ▼
+┌─────────────────────────────────────────────────────────────┐
+│ Governance outputs                                          │
+│ - structured audit event                                    │
+│ - audit-trail/decisions.jsonl                               │
+│ - reports/child-safety-governance-report.md                 │
+└─────────────────────────────────────────────────────────────┘
+```
+
+## Decision Engine
+
+The decision tree is implemented as a small domain module at
+`lib/decision-engine`. Keeping it outside dashboard components allows the same
+logic to be reused by an API endpoint, background audit worker, coding-agent
+plugin, or test suite.
 
 The current flow is:
 
 1. Determine the applied policy from user age and service child access.
-2. Match enabled locked rules.
+2. Match locked harm/governance rules against the input.
 3. Calculate a numeric risk score and risk level.
 4. Choose the safety action.
 5. Choose the retention mode.
 6. Run a rights review for sensitive actions.
-7. Emit a structured audit event and human-readable explanation.
+7. Emit a structured audit event, source-backed explanation, and decision path.
+
+## Context Policy
+
+Context is not treated as harm evidence. The engine first decides the policy
+context:
+
+```text
+child_directed platform + any user age → child_safe_policy
+unknown age + mixed/unknown child access → child_safe_default
+verified adult + verified_adult_only → adult_policy_plus_universal_safety
+other contexts → general_ai_safety
+```
+
+This distinction prevents harmless unknown-age prompts from being overflagged
+while ensuring that child-directed platforms apply child-safe rules to everyone.
+
+## Governance Tradeoffs
+
+Safe Haven exposes the tradeoffs the hackathon asks participants to consider:
+
+- **Safety vs privacy:** retention defaults to no content or metadata-only
+  unless higher-risk review needs a redacted excerpt.
+- **False positives vs false negatives:** risk score, matched rules, and action
+  are visible so escalation choices can be reviewed.
+- **Fairness and inclusion:** the prompt tester surfaces age, service context,
+  vulnerability, and flags so teams can create disaggregated synthetic tests.
+- **Human oversight vs automation:** high-risk and rights-sensitive cases route
+  to human review, urgent escalation, or rights review instead of silent action.
+
+## Paper Trail
+
+The technical audit format is `audit-trail/decisions.jsonl`. Each entry should
+record the decision, matched rules, tradeoffs, selected retention mode, oversight
+choice, and references to source-backed reasoning.
+
+The human-readable report is
+`reports/child-safety-governance-report.md`. It summarizes purpose, intended use,
+known limitations, foreseeable risks, human oversight, and traceability.
 
 ## Dashboard integration
 
