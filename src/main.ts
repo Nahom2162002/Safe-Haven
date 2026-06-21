@@ -707,38 +707,33 @@ function renderPromptResult(
       const ruleItem = document.createElement("article");
       ruleItem.className = "matched-rule";
 
+      const ruleHeader = document.createElement("div");
+      ruleHeader.className = "matched-rule-header";
+
       const ruleHeading = document.createElement("strong");
       ruleHeading.textContent = `${rule.id}: ${rule.label}`;
 
-      const ruleDescription = document.createElement("p");
-      ruleDescription.textContent = rule.matchReason
-        ? `${rule.description} ${rule.matchReason}`
-          : rule.description;
+      const sourceChips = createSourceChips(rule);
+      ruleHeader.append(ruleHeading);
+      if (sourceChips) ruleHeader.append(sourceChips);
+      ruleItem.append(ruleHeader);
 
-      ruleItem.append(ruleHeading, ruleDescription);
-
-      if (rule.riskType) {
-        const riskType = document.createElement("p");
-        riskType.className = "rule-evidence-line";
-        riskType.textContent = `Risk type: ${rule.riskType}`;
-        ruleItem.append(riskType);
-      }
-
-      if (rule.whyRisk) {
-        const whyRisk = document.createElement("p");
-        whyRisk.className = "rule-evidence-line";
-        whyRisk.textContent = `Why this is a risk: ${rule.whyRisk}`;
-        ruleItem.append(whyRisk);
-      }
-
+      appendEvidenceRow(ruleItem, "Rule", rule.description);
+      if (rule.matchReason) appendEvidenceRow(ruleItem, "Match", rule.matchReason);
+      if (rule.riskType) appendEvidenceRow(ruleItem, "Risk type", rule.riskType);
+      if (rule.whyRisk) appendEvidenceRow(ruleItem, "Why this is a risk", rule.whyRisk);
       if (rule.userGuidance) {
-        const guidance = document.createElement("p");
-        guidance.className = "rule-evidence-line";
-        guidance.textContent = `Suggested next step: ${rule.userGuidance}`;
-        ruleItem.append(guidance);
+        appendEvidenceRow(ruleItem, "Suggested next step", rule.userGuidance);
       }
 
       if (rule.complianceReferences?.length) {
+        const sources = document.createElement("details");
+        sources.className = "source-details";
+
+        const sourceSummary = document.createElement("summary");
+        sourceSummary.textContent = "Sources and principles";
+        sources.append(sourceSummary);
+
         const sourceList = document.createElement("ul");
         sourceList.className = "source-list";
 
@@ -750,14 +745,19 @@ function renderPromptResult(
           link.rel = "noreferrer";
           link.textContent = `${reference.publisher}: ${reference.title}`;
 
+          const principle = document.createElement("span");
+          principle.className = "source-principle";
+          principle.textContent = `Principle: ${reference.principle}`;
+
           const relevance = document.createElement("span");
           relevance.textContent = reference.relevance;
 
-          item.append(link, relevance);
+          item.append(link, principle, relevance);
           sourceList.append(item);
         });
 
-        ruleItem.append(sourceList);
+        sources.append(sourceList);
+        ruleItem.append(sources);
       }
 
       ruleList.append(ruleItem);
@@ -1263,6 +1263,12 @@ function createRuleRow(rule: RuleDefinition): HTMLElement {
     : rule.enabled
       ? "enabled"
       : "disabled";
+
+  const chips = createSourceChips(rule);
+  if (chips) {
+    row.querySelector(".rule-main")?.append(chips);
+  }
+
   toggle.checked = rule.enabled;
   toggle.disabled = rule.locked;
   toggle.setAttribute(
@@ -1287,6 +1293,67 @@ function createRuleRow(rule: RuleDefinition): HTMLElement {
   }
 
   return row;
+}
+
+function createSourceChips(rule: RuleDefinition): HTMLElement | null {
+  if (!rule.complianceReferences?.length) return null;
+
+  const chips = document.createElement("div");
+  chips.className = "source-chips";
+
+  getUniqueReferences(rule).forEach((reference) => {
+    const chip = document.createElement("a");
+    chip.className = "source-chip";
+    chip.href = reference.url;
+    chip.target = "_blank";
+    chip.rel = "noreferrer";
+    chip.textContent = reference.publisher;
+    chip.title = `${reference.title} - ${reference.principle}`;
+    chips.append(chip);
+  });
+
+  const principles = document.createElement("p");
+  principles.className = "principle-summary";
+  principles.textContent = `Legal / ethics basis: ${getUniquePrinciples(rule).join(", ")}`;
+  chips.append(principles);
+
+  return chips;
+}
+
+function appendEvidenceRow(parent: HTMLElement, label: string, value: string): void {
+  const row = document.createElement("div");
+  row.className = "evidence-row";
+
+  const term = document.createElement("span");
+  term.textContent = label;
+
+  const description = document.createElement("p");
+  description.textContent = value;
+
+  row.append(term, description);
+  parent.append(row);
+}
+
+function getUniqueReferences(rule: RuleDefinition): NonNullable<
+  RuleDefinition["complianceReferences"]
+> {
+  const unique = new Map<string, NonNullable<RuleDefinition["complianceReferences"]>[number]>();
+
+  rule.complianceReferences?.forEach((reference) => {
+    unique.set(`${reference.publisher}:${reference.url}`, reference);
+  });
+
+  return Array.from(unique.values());
+}
+
+function getUniquePrinciples(rule: RuleDefinition): string[] {
+  const principles = new Set<string>();
+
+  rule.complianceReferences?.forEach((reference) => {
+    principles.add(reference.principle);
+  });
+
+  return Array.from(principles);
 }
 
 function openDeleteModal(rule: CustomRule): void {

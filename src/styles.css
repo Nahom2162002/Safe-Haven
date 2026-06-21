@@ -410,6 +410,37 @@ h3 {
   flex: 0 0 auto;
 }
 
+.source-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-top: 4px;
+}
+
+.source-chip {
+  border: 1px solid rgba(23, 107, 84, 0.2);
+  border-radius: 999px;
+  padding: 4px 8px;
+  color: var(--accent-dark);
+  background: #eef7f2;
+  font-size: 0.7rem;
+  font-weight: 900;
+  text-decoration: none;
+}
+
+.source-chip:hover {
+  border-color: var(--accent);
+}
+
+.principle-summary {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
 .switch {
   display: inline-block;
   position: relative;
@@ -718,10 +749,10 @@ h3 {
 .rubric-result,
 .suite-row {
   display: grid;
-  gap: 10px;
+  gap: 12px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  padding: 14px;
+  padding: 18px;
   background: #fff;
 }
 
@@ -739,10 +770,33 @@ h3 {
   display: grid;
   gap: 8px;
   border-left: 3px solid var(--accent);
-  padding-left: 10px;
+  padding-left: 12px;
 }
 
-.rule-evidence-line {
+.matched-rule-header {
+  display: grid;
+  gap: 8px;
+}
+
+.matched-rule-header > strong {
+  font-size: 0.95rem;
+}
+
+.evidence-row {
+  display: grid;
+  grid-template-columns: 132px minmax(0, 1fr);
+  gap: 10px;
+  border-top: 1px solid rgba(101, 113, 105, 0.14);
+  padding-top: 7px;
+}
+
+.evidence-row span {
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 900;
+}
+
+.evidence-row p {
   font-size: 0.9rem;
 }
 
@@ -751,6 +805,18 @@ h3 {
   gap: 7px;
   margin: 2px 0 0;
   padding-left: 18px;
+}
+
+.source-details {
+  border-top: 1px solid rgba(101, 113, 105, 0.14);
+  padding-top: 9px;
+}
+
+.source-details summary {
+  color: var(--accent-dark);
+  font-size: 0.82rem;
+  font-weight: 900;
+  cursor: pointer;
 }
 
 .source-list li {
@@ -769,12 +835,17 @@ h3 {
   font-size: 0.82rem;
 }
 
+.source-list .source-principle {
+  color: var(--ink);
+  font-weight: 800;
+}
+
 .explanation-section {
   display: grid;
-  gap: 8px;
+  gap: 7px;
   border: 1px solid rgba(101, 113, 105, 0.16);
   border-radius: 8px;
-  padding: 12px;
+  padding: 12px 14px;
 }
 
 .explanation-section.context {

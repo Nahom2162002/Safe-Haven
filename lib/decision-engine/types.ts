@@ -107,6 +107,7 @@ export interface ComplianceReference {
   title: string;
   publisher: string;
   url: string;
+  principle: string;
   relevance: string;
 }
 

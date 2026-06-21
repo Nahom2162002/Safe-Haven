@@ -66,11 +66,13 @@ export const LOCKED_RULES: Record<LockedRuleId, RuleDefinition> = {
     complianceReferences: [
       {
         ...UNICEF_AI_FRIEND_POLICY,
+        principle: "Age assurance and child-safe defaults",
         relevance:
           "Supports age assurance, access controls, child-risk assessment, and restrictions on harmful content for children.",
       },
       {
         ...UNICEF_AI_CHILDREN,
+        principle: "Child-centred AI safety and well-being",
         relevance:
           "Supports child-centred AI requirements for safety, privacy, transparency, and child well-being.",
       },
@@ -93,16 +95,19 @@ export const LOCKED_RULES: Record<LockedRuleId, RuleDefinition> = {
     complianceReferences: [
       {
         ...UNICEF_AI_CHILDREN,
+        principle: "Child safety and best interests",
         relevance:
           "Directly supports the requirements to ensure child safety and respect child rights in AI systems.",
       },
       {
         ...UNICEF_AI_FRIEND_POLICY,
+        principle: "Protection from sexual exploitation",
         relevance:
           "Identifies sexualized children and harmful chatbot interactions as child-rights and safety risks.",
       },
       {
         ...UNICEF_DCRIA,
+        principle: "Child-rights impact assessment",
         relevance:
           "Supports identifying, preventing, and mitigating child-rights risks in digital products.",
       },
@@ -125,16 +130,19 @@ export const LOCKED_RULES: Record<LockedRuleId, RuleDefinition> = {
     complianceReferences: [
       {
         ...UNICEF_AI_FRIEND_POLICY,
+        principle: "Safeguarding from grooming and coercion",
         relevance:
           "Supports safeguards for chatbot interactions that can mislead, sexualize, or harm children.",
       },
       {
         ...UNICEF_AI_FRIEND_BUSINESS,
+        principle: "Business responsibility for child safety",
         relevance:
           "Recommends testing risks to children's safety, autonomy, privacy, and mental well-being.",
       },
       {
         ...UNICEF_DIGITAL_STRATEGY,
+        principle: "Children's rights in the digital environment",
         relevance:
           "Supports child protection and safety principles in the digital environment.",
       },
@@ -157,11 +165,13 @@ export const LOCKED_RULES: Record<LockedRuleId, RuleDefinition> = {
     complianceReferences: [
       {
         ...UNICEF_AI_CHILDREN,
+        principle: "Safety from AI-generated sexual abuse harms",
         relevance:
           "Highlights AI-generated child sexual abuse material and non-consensual intimate images as emerging AI risks.",
       },
       {
         ...UNESCO_AI_ETHICS,
+        principle: "Human dignity, privacy, and do-no-harm",
         relevance:
           "Supports human dignity, human rights, do-no-harm, safety, and privacy principles.",
       },
@@ -184,11 +194,13 @@ export const LOCKED_RULES: Record<LockedRuleId, RuleDefinition> = {
     complianceReferences: [
       {
         ...UNICEF_AI_CHILDREN,
+        principle: "Safety, inclusion, and child well-being",
         relevance:
           "Supports children's safety, non-discrimination, inclusion, and well-being in AI systems.",
       },
       {
         ...UNICEF_DIGITAL_STRATEGY,
+        principle: "Digital child protection",
         relevance:
           "Supports children's rights and protection in the digital environment.",
       },
@@ -211,16 +223,19 @@ export const LOCKED_RULES: Record<LockedRuleId, RuleDefinition> = {
     complianceReferences: [
       {
         ...UNICEF_AI_FRIEND_POLICY,
+        principle: "Mental well-being and crisis safeguards",
         relevance:
           "Discusses reported failures around suicidal ideation in AI companion systems and the need for safeguards.",
       },
       {
         ...UNICEF_AI_FRIEND_BUSINESS,
+        principle: "Testing mental well-being risks",
         relevance:
           "Recommends testing risks to children's mental well-being and safety.",
       },
       {
         ...UNESCO_AI_ETHICS,
+        principle: "Human oversight and do-no-harm",
         relevance:
           "Supports do-no-harm, safety, human oversight, and protection of human rights.",
       },
@@ -243,11 +258,13 @@ export const LOCKED_RULES: Record<LockedRuleId, RuleDefinition> = {
     complianceReferences: [
       {
         ...UNICEF_AI_CHILDREN,
+        principle: "Protection from abuse and exploitation",
         relevance:
           "Supports safety, child rights, best interests, and well-being requirements for AI systems.",
       },
       {
         ...UNICEF_DCRIA,
+        principle: "Child-rights impact assessment",
         relevance:
           "Supports identifying and mitigating child-rights risks from digital products and services.",
       },
@@ -270,11 +287,13 @@ export const LOCKED_RULES: Record<LockedRuleId, RuleDefinition> = {
     complianceReferences: [
       {
         ...UNICEF_AI_FRIEND_POLICY,
+        principle: "Harmful content controls for children",
         relevance:
           "Highlights restrictions on content harmful to children and access-level protections for sexualized AI companion interactions.",
       },
       {
         ...UNICEF_AI_CHILDREN,
+        principle: "Child safety and age-appropriate design",
         relevance:
           "Supports safety, well-being, and best interests of children in AI systems.",
       },
@@ -297,11 +316,13 @@ export const LOCKED_RULES: Record<LockedRuleId, RuleDefinition> = {
     complianceReferences: [
       {
         ...UNICEF_AI_CHILDREN,
+        principle: "Non-discrimination and inclusion",
         relevance:
           "Supports non-discrimination, fairness, inclusion, and child rights requirements.",
       },
       {
         ...UNESCO_AI_ETHICS,
+        principle: "Fairness and non-discrimination",
         relevance:
           "Supports human dignity, diversity, inclusiveness, fairness, and non-discrimination.",
       },
@@ -324,16 +345,19 @@ export const LOCKED_RULES: Record<LockedRuleId, RuleDefinition> = {
     complianceReferences: [
       {
         ...UNICEF_AI_CHILDREN,
+        principle: "Privacy and personal data protection",
         relevance:
           "Directly supports the requirement to protect children's data and privacy.",
       },
       {
         ...UNICEF_AI_FRIEND_BUSINESS,
+        principle: "Privacy and autonomy risk testing",
         relevance:
           "Recommends testing privacy and autonomy risks to children.",
       },
       {
         ...AESIA_GUIDES,
+        principle: "Data governance under EU AI Act practice",
         relevance:
           "Guide 7 on data governance is relevant to data quality, governance, and responsible handling under EU AI Act compliance practice.",
       },
@@ -356,16 +380,19 @@ export const LOCKED_RULES: Record<LockedRuleId, RuleDefinition> = {
     complianceReferences: [
       {
         ...UNICEF_AI_FRIEND_POLICY,
+        principle: "Protection from exploitative design",
         relevance:
           "Identifies exploitative design and misleading chatbots as regulatory concerns for child safety.",
       },
       {
         ...UNICEF_AI_CHILDREN,
+        principle: "Transparency, accountability, and child well-being",
         relevance:
           "Supports best interests, well-being, transparency, explainability, and accountability for children.",
       },
       {
         ...UNESCO_AI_ETHICS,
+        principle: "Human autonomy and transparency",
         relevance:
           "Supports transparency, human autonomy, proportionality, and do-no-harm principles.",
       },
@@ -388,11 +415,13 @@ export const LOCKED_RULES: Record<LockedRuleId, RuleDefinition> = {
     complianceReferences: [
       {
         ...UNICEF_AI_CHILDREN,
+        principle: "Protection from economic exploitation",
         relevance:
           "Identifies child labour and harmful AI supply-chain practices as child-rights concerns.",
       },
       {
         ...UNICEF_DCRIA,
+        principle: "Responsible technology impact assessment",
         relevance:
           "Supports child-rights impact assessment for digital business activities and AI products.",
       },
@@ -415,11 +444,13 @@ export const LOCKED_RULES: Record<LockedRuleId, RuleDefinition> = {
     complianceReferences: [
       {
         ...UNICEF_AI_CHILDREN,
+        principle: "Protection from violence and exploitation",
         relevance:
           "Supports child safety, protection from harm, and child-rights safeguards in AI systems.",
       },
       {
         ...UNESCO_AI_ETHICS,
+        principle: "Safety, security, and human rights",
         relevance:
           "Supports safety, security, human rights, and do-no-harm principles.",
       },
@@ -442,11 +473,13 @@ export const LOCKED_RULES: Record<LockedRuleId, RuleDefinition> = {
     complianceReferences: [
       {
         ...UNESCO_AI_ETHICS,
+        principle: "Safety, security, and do-no-harm",
         relevance:
           "Supports do-no-harm, safety and security, risk assessment, and human-rights-centred AI governance.",
       },
       {
         ...UNICEF_AI_CHILDREN,
+        principle: "Responsible AI and child safety",
         relevance:
           "Supports ensuring safety for children and responsible AI practice.",
       },
@@ -470,16 +503,19 @@ export const LOCKED_RULES: Record<LockedRuleId, RuleDefinition> = {
     complianceReferences: [
       {
         ...UNICEF_AI_CHILDREN,
+        principle: "Child safety and accountability",
         relevance:
           "Supports child safety, transparency, accountability, and child well-being requirements.",
       },
       {
         ...UNICEF_AI_FRIEND_BUSINESS,
+        principle: "Testing safety and mental well-being risks",
         relevance:
           "Recommends testing risks to children's safety and mental well-being.",
       },
       {
         ...UNESCO_AI_ETHICS,
+        principle: "Transparency, explainability, and do-no-harm",
         relevance:
           "Supports transparency, explainability, safety, and do-no-harm principles.",
       },
@@ -502,21 +538,25 @@ export const LOCKED_RULES: Record<LockedRuleId, RuleDefinition> = {
     complianceReferences: [
       {
         ...UNICEF_AI_CHILDREN,
+        principle: "Transparency, accountability, and oversight",
         relevance:
           "Supports regulatory oversight, transparency, explainability, accountability, and responsible AI practice.",
       },
       {
         ...AESIA_GUIDES,
+        principle: "EU AI Act operational compliance",
         relevance:
           "Guides 6, 7, and 11 are relevant to human supervision, data governance, and cybersecurity practices for EU AI Act compliance.",
       },
       {
         ...GOOGLE_MODEL_CARDS,
+        principle: "Model documentation and transparency",
         relevance:
           "Supports structured documentation of model design, evaluation, limitations, and responsible use.",
       },
       {
         ...UNESCO_AI_ETHICS,
+        principle: "Human oversight and accountability",
         relevance:
           "Supports human oversight, transparency, accountability, safety, and proportionality.",
       },
