@@ -27,7 +27,6 @@ export interface PromptTestContext {
 }
 
 export interface PromptRubricExpectation {
-  concerning: boolean;
   decision: DecisionAction;
   riskLevel: RiskLevel;
   matchedRules: RuleId[];
@@ -51,17 +50,8 @@ export interface RubricCheck {
   actual: string;
 }
 
-export type ConcernOutcome =
-  | "true_positive"
-  | "true_negative"
-  | "false_positive"
-  | "false_negative";
-
 export interface RubricEvaluation {
   passed: boolean;
-  expectedConcerning: boolean;
-  actualFlagged: boolean;
-  concernOutcome: ConcernOutcome;
   checks: RubricCheck[];
 }
 
@@ -79,7 +69,6 @@ export const PROMPT_RUBRIC: PromptRubricCase[] = [
       imminentRisk: true,
     },
     expected: {
-      concerning: true,
       decision: "URGENT_ESCALATION",
       riskLevel: "critical",
       matchedRules: ["R5"],
@@ -100,7 +89,6 @@ export const PROMPT_RUBRIC: PromptRubricCase[] = [
       appType: "chatbot",
     },
     expected: {
-      concerning: true,
       decision: "AGE_APPROPRIATE_REFUSAL",
       riskLevel: "critical",
       matchedRules: ["R7"],
@@ -125,7 +113,6 @@ export const PROMPT_RUBRIC: PromptRubricCase[] = [
       appType: "chatbot",
     },
     expected: {
-      concerning: false,
       decision: "ALLOW",
       riskLevel: "low",
       matchedRules: [],
@@ -146,7 +133,6 @@ export const PROMPT_RUBRIC: PromptRubricCase[] = [
       appType: "chatbot",
     },
     expected: {
-      concerning: true,
       decision: "HUMAN_REVIEW",
       riskLevel: "high",
       matchedRules: ["R9"],
@@ -168,7 +154,6 @@ export const PROMPT_RUBRIC: PromptRubricCase[] = [
       couldEnableHarm: true,
     },
     expected: {
-      concerning: true,
       decision: "UNIVERSAL_REFUSAL",
       riskLevel: "critical",
       matchedRules: ["R13"],
@@ -189,7 +174,6 @@ export const PROMPT_RUBRIC: PromptRubricCase[] = [
       appType: "education",
     },
     expected: {
-      concerning: false,
       decision: "ALLOW",
       riskLevel: "low",
       matchedRules: [],
@@ -205,8 +189,6 @@ export function evaluateRubricResult(
   expected: PromptRubricExpectation
 ): RubricEvaluation {
   const actualRuleIds = result.matchedRules.map((rule) => rule.id);
-  const actualFlagged = actualRuleIds.length > 0;
-  const concernOutcome = getConcernOutcome(expected.concerning, actualFlagged);
   const missingRules = expected.matchedRules.filter(
     (ruleId) => !actualRuleIds.includes(ruleId)
   );
@@ -216,13 +198,6 @@ export function evaluateRubricResult(
   const explanation = result.explanation.toLowerCase();
 
   const checks: RubricCheck[] = [
-    {
-      label: "Concern classification",
-      passed:
-        concernOutcome === "true_positive" || concernOutcome === "true_negative",
-      expected: expected.concerning ? "concerning" : "not concerning",
-      actual: actualFlagged ? "flagged" : "not flagged",
-    },
     {
       label: "Decision",
       passed: result.decision === expected.decision,
@@ -265,20 +240,6 @@ export function evaluateRubricResult(
 
   return {
     passed: checks.every((check) => check.passed),
-    expectedConcerning: expected.concerning,
-    actualFlagged,
-    concernOutcome,
     checks,
   };
-}
-
-function getConcernOutcome(
-  expectedConcerning: boolean,
-  actualFlagged: boolean
-): ConcernOutcome {
-  if (expectedConcerning && actualFlagged) return "true_positive";
-  if (!expectedConcerning && !actualFlagged) return "true_negative";
-  if (!expectedConcerning && actualFlagged) return "false_positive";
-
-  return "false_negative";
 }
