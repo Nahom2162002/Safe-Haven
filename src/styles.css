@@ -701,7 +701,8 @@ h3 {
 }
 
 .decision-badge,
-.status-badge {
+.status-badge,
+.outcome-badge {
   flex: 0 0 auto;
   border-radius: 999px;
   padding: 6px 10px;
@@ -730,6 +731,64 @@ h3 {
 .status-badge.fail {
   color: #fff;
   background: var(--danger);
+}
+
+.outcome-badge {
+  color: var(--ink);
+  background: #f0f3f0;
+}
+
+.outcome-badge.true_positive {
+  color: #fff;
+  background: var(--accent);
+}
+
+.outcome-badge.true_negative {
+  color: #fff;
+  background: var(--info);
+}
+
+.outcome-badge.false_positive {
+  color: #fff;
+  background: var(--warning);
+}
+
+.outcome-badge.false_negative {
+  color: #fff;
+  background: var(--danger);
+}
+
+.confusion-stats {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(130px, 1fr));
+  gap: 10px;
+}
+
+.stat-tile {
+  display: grid;
+  gap: 5px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  background: #fff;
+}
+
+.stat-tile strong {
+  font-size: 1.6rem;
+  line-height: 1;
+}
+
+.stat-tile span {
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.stat-tile p,
+.classification-summary {
+  margin-bottom: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.35;
 }
 
 .result-source-tags {
@@ -1038,6 +1097,7 @@ h3 {
   .chatbot-grid,
   .context-grid,
   .flag-grid,
+  .confusion-stats,
   .result-summary {
     grid-template-columns: 1fr;
   }

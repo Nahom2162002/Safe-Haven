@@ -12,6 +12,7 @@ import {
 import {
   PROMPT_RUBRIC,
   evaluateRubricResult,
+  type ConcernOutcome,
   type PromptRubricCase,
   type PromptTestContext,
   type RubricEvaluation,
@@ -175,6 +176,14 @@ app.innerHTML = `
           Rubric case
           <select id="rubricCase">
             <option value="">Freeform prompt</option>
+          </select>
+        </label>
+        <label class="rubric-picker">
+          Expected classification
+          <select id="expectedConcern">
+            <option value="">Unknown</option>
+            <option value="concerning">Concerning</option>
+            <option value="safe">Not concerning</option>
           </select>
         </label>
       </div>
@@ -357,6 +366,7 @@ const viewPanels = Array.from(document.querySelectorAll<HTMLElement>(".view-pane
 const promptForm = getElement<HTMLFormElement>("#promptForm");
 const promptText = getElement<HTMLTextAreaElement>("#promptText");
 const rubricCaseSelect = getElement<HTMLSelectElement>("#rubricCase");
+const expectedConcern = getElement<HTMLSelectElement>("#expectedConcern");
 const inputType = getElement<HTMLSelectElement>("#inputType");
 const ageGroup = getElement<HTMLSelectElement>("#ageGroup");
 const vulnerability = getElement<HTMLSelectElement>("#vulnerability");
@@ -425,6 +435,8 @@ rubricCaseSelect.addEventListener("change", () => {
   if (selectedCase) {
     applyPromptCase(selectedCase);
     runPromptCheck(selectedCase);
+  } else {
+    expectedConcern.value = "";
   }
 });
 
@@ -504,6 +516,7 @@ function getSelectedRubricCase(): PromptRubricCase | null {
 
 function applyPromptCase(rubricCase: PromptRubricCase): void {
   promptText.value = rubricCase.prompt;
+  expectedConcern.value = rubricCase.expected.concerning ? "concerning" : "safe";
   applyPromptContext(rubricCase.context);
 }
 
@@ -547,10 +560,56 @@ function runPromptCheck(rubricCase: PromptRubricCase | null): void {
   const result = runDecision(prompt, context);
   const evaluation = rubricCase
     ? evaluateRubricResult(result, rubricCase.expected)
-    : null;
+    : createFreeformConcernEvaluation(result, getExpectedConcerning());
 
   recordAuditEntry(prompt, context, result, evaluation, rubricCase);
   renderPromptResult(result, evaluation, rubricCase);
+}
+
+function getExpectedConcerning(): boolean | null {
+  if (expectedConcern.value === "concerning") return true;
+  if (expectedConcern.value === "safe") return false;
+
+  return null;
+}
+
+function createFreeformConcernEvaluation(
+  result: DecisionResult,
+  expectedConcerning: boolean | null
+): RubricEvaluation | null {
+  if (expectedConcerning === null) return null;
+
+  const actualFlagged = result.matchedRules.length > 0;
+  const concernOutcome = getConcernOutcome(expectedConcerning, actualFlagged);
+
+  return {
+    passed:
+      concernOutcome === "true_positive" || concernOutcome === "true_negative",
+    expectedConcerning,
+    actualFlagged,
+    concernOutcome,
+    checks: [
+      {
+        label: "Concern classification",
+        passed:
+          concernOutcome === "true_positive" ||
+          concernOutcome === "true_negative",
+        expected: expectedConcerning ? "concerning" : "not concerning",
+        actual: actualFlagged ? "flagged" : "not flagged",
+      },
+    ],
+  };
+}
+
+function getConcernOutcome(
+  expectedConcerning: boolean,
+  actualFlagged: boolean
+): ConcernOutcome {
+  if (expectedConcerning && actualFlagged) return "true_positive";
+  if (!expectedConcerning && !actualFlagged) return "true_negative";
+  if (!expectedConcerning && actualFlagged) return "false_positive";
+
+  return "false_negative";
 }
 
 function runDecision(prompt: string, context: PromptTestContext): DecisionResult {
@@ -592,6 +651,9 @@ function runRubricSuite(): void {
     };
   });
   const passedCount = suiteResults.filter((item) => item.evaluation.passed).length;
+  const stats = calculateConcernStats(
+    suiteResults.map((item) => item.evaluation)
+  );
 
   chatbotResult.replaceChildren();
   chatbotResult.className = "chatbot-result";
@@ -602,6 +664,7 @@ function runRubricSuite(): void {
   const title = document.createElement("h3");
   title.textContent = `Rubric suite: ${passedCount}/${suiteResults.length} passed`;
   chatbotResult.append(title);
+  chatbotResult.append(createConcernStatsPanel(stats));
 
   const list = document.createElement("div");
   list.className = "rubric-suite-list";
@@ -622,12 +685,18 @@ function runRubricSuite(): void {
     badge.className = evaluation.passed ? "status-badge pass" : "status-badge fail";
     badge.textContent = evaluation.passed ? "PASS" : "FAIL";
 
-    heading.append(name, badge);
+    const outcome = document.createElement("span");
+    outcome.className = `outcome-badge ${evaluation.concernOutcome}`;
+    outcome.textContent = formatConcernOutcome(evaluation.concernOutcome);
+
+    heading.append(name, outcome, badge);
 
     const details = document.createElement("p");
     details.textContent = `${result.decision} / ${result.riskLevel} / ${
       result.matchedRules.map((rule) => rule.id).join(", ") || "no rules"
-    }`;
+    }. Expected ${evaluation.expectedConcerning ? "concerning" : "not concerning"}; ${
+      evaluation.actualFlagged ? "flagged" : "not flagged"
+    }.`;
 
     row.append(heading, details);
 
@@ -648,6 +717,100 @@ function runRubricSuite(): void {
   });
 
   chatbotResult.append(list);
+}
+
+function calculateConcernStats(evaluations: RubricEvaluation[]): Record<ConcernOutcome, number> {
+  return evaluations.reduce<Record<ConcernOutcome, number>>(
+    (stats, evaluation) => {
+      stats[evaluation.concernOutcome] += 1;
+      return stats;
+    },
+    {
+      true_positive: 0,
+      true_negative: 0,
+      false_positive: 0,
+      false_negative: 0,
+    }
+  );
+}
+
+function createConcernStatsPanel(
+  stats: Record<ConcernOutcome, number>
+): HTMLElement {
+  const panel = document.createElement("section");
+  panel.className = "confusion-stats";
+
+  const total =
+    stats.true_positive +
+    stats.true_negative +
+    stats.false_positive +
+    stats.false_negative;
+  const accuracy = total
+    ? Math.round(((stats.true_positive + stats.true_negative) / total) * 100)
+    : 0;
+
+  appendStatTile(
+    panel,
+    "True Positive",
+    stats.true_positive,
+    "Concerning prompt correctly flagged."
+  );
+  appendStatTile(
+    panel,
+    "True Negative",
+    stats.true_negative,
+    "Safe prompt correctly left unflagged."
+  );
+  appendStatTile(
+    panel,
+    "False Positive",
+    stats.false_positive,
+    "Safe prompt was flagged."
+  );
+  appendStatTile(
+    panel,
+    "False Negative",
+    stats.false_negative,
+    "Concerning prompt was missed."
+  );
+  appendStatTile(panel, "Accuracy", `${accuracy}%`, "Correct flag decisions.");
+
+  return panel;
+}
+
+function appendStatTile(
+  parent: HTMLElement,
+  label: string,
+  value: number | string,
+  description: string
+): void {
+  const tile = document.createElement("div");
+  tile.className = "stat-tile";
+
+  const count = document.createElement("strong");
+  count.textContent = String(value);
+
+  const name = document.createElement("span");
+  name.textContent = label;
+
+  const detail = document.createElement("p");
+  detail.textContent = description;
+
+  tile.append(count, name, detail);
+  parent.append(tile);
+}
+
+function formatConcernOutcome(outcome: ConcernOutcome): string {
+  switch (outcome) {
+    case "true_positive":
+      return "True Positive";
+    case "true_negative":
+      return "True Negative";
+    case "false_positive":
+      return "False Positive";
+    case "false_negative":
+      return "False Negative";
+  }
 }
 
 function recordAuditEntry(
@@ -687,6 +850,9 @@ function recordAuditEntry(
     rightsReview: result.audit.rightsReview,
     rubricCase: rubricCase?.id ?? null,
     rubricPassed: evaluation?.passed ?? null,
+    expectedConcerning: evaluation?.expectedConcerning ?? null,
+    actualFlagged: evaluation?.actualFlagged ?? null,
+    concernOutcome: evaluation?.concernOutcome ?? null,
     explanation: result.explanation,
   };
 
@@ -864,6 +1030,8 @@ function renderPromptResult(
 
   if (evaluation && rubricCase) {
     renderRubricEvaluation(evaluation, rubricCase);
+  } else if (evaluation) {
+    renderConcernEvaluation(evaluation);
   }
 }
 
@@ -895,8 +1063,19 @@ function renderRubricEvaluation(
   badge.className = evaluation.passed ? "status-badge pass" : "status-badge fail";
   badge.textContent = evaluation.passed ? "PASS" : "FAIL";
 
-  header.append(title, badge);
+  const outcome = document.createElement("span");
+  outcome.className = `outcome-badge ${evaluation.concernOutcome}`;
+  outcome.textContent = formatConcernOutcome(evaluation.concernOutcome);
+
+  header.append(title, outcome, badge);
   rubric.append(header);
+
+  const classification = document.createElement("p");
+  classification.className = "classification-summary";
+  classification.textContent = `Ground truth: ${
+    evaluation.expectedConcerning ? "concerning" : "not concerning"
+  }. Engine result: ${evaluation.actualFlagged ? "flagged" : "not flagged"}.`;
+  rubric.append(classification);
 
   const list = document.createElement("ul");
   list.className = "check-list";
@@ -909,6 +1088,33 @@ function renderRubricEvaluation(
   });
 
   rubric.append(list);
+  chatbotResult.append(rubric);
+}
+
+function renderConcernEvaluation(evaluation: RubricEvaluation): void {
+  const rubric = document.createElement("section");
+  rubric.className = "rubric-result";
+
+  const header = document.createElement("div");
+  header.className = "result-header";
+
+  const title = document.createElement("h4");
+  title.textContent = "Freeform classification";
+
+  const outcome = document.createElement("span");
+  outcome.className = `outcome-badge ${evaluation.concernOutcome}`;
+  outcome.textContent = formatConcernOutcome(evaluation.concernOutcome);
+
+  header.append(title, outcome);
+  rubric.append(header);
+
+  const classification = document.createElement("p");
+  classification.className = "classification-summary";
+  classification.textContent = `Ground truth: ${
+    evaluation.expectedConcerning ? "concerning" : "not concerning"
+  }. Engine result: ${evaluation.actualFlagged ? "flagged" : "not flagged"}.`;
+  rubric.append(classification);
+
   chatbotResult.append(rubric);
 }
 
