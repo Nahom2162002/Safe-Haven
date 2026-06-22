@@ -810,7 +810,7 @@ async function runGuardrailReview(): Promise<void> {
       }),
     });
 
-    const payload = (await response.json()) as {
+    const payload = (await readJsonResponse(response)) as {
       provider?: string;
       tool?: string;
       result?: DeveloperGuardrailResult;
@@ -826,6 +826,26 @@ async function runGuardrailReview(): Promise<void> {
   } catch (error) {
     renderGuardrailError(
       error instanceof Error ? error.message : "Unable to reach MCP review endpoint"
+    );
+  }
+}
+
+async function readJsonResponse(response: Response): Promise<unknown> {
+  const text = await response.text();
+
+  if (!text.trim()) {
+    throw new Error(
+      response.ok
+        ? "Server returned an empty response."
+        : `Server returned ${response.status} with an empty response. Make sure npm run dev:api is running and restart it after code changes.`
+    );
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(
+      `Server returned non-JSON response (${response.status}). Make sure the Safe Haven API is running on http://localhost:8787.`
     );
   }
 }
