@@ -17,5 +17,12 @@
     {
       "file": "AGENTS.md"
     }
-  ]
+  ],
+  "mcp": {
+    "safe-haven": {
+      "type": "local",
+      "command": ["npm", "run", "mcp:safe-haven"],
+      "enabled": true
+    }
+  }
 }

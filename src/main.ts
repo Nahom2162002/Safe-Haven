@@ -25,7 +25,7 @@ type CustomRule = RuleDefinition & {
 };
 
 type RuleFilter = "all" | "locked" | "custom" | "enabled" | "disabled";
-type AppView = "rules" | "tester";
+type AppView = "rules" | "tester" | "guardrail";
 
 type DecisionPathBranch = {
   id: string;
@@ -50,9 +50,30 @@ type AiContextResult = {
   backendNote?: string;
 };
 
+type DeveloperGuardrailResult = {
+  governance_required: boolean;
+  reason: string;
+  matched_rules: string[];
+  risk_level: "low" | "medium" | "high" | "critical";
+  recommended_retention: RetentionMode;
+  human_oversight_required: boolean;
+  required_controls: string[];
+  blocked_design_choices: string[];
+  recommended_tests: string[];
+  copilot_instruction: string;
+  matched_rule_details?: Array<{
+    id: string;
+    label: string;
+    riskType?: string;
+    whyRisk?: string;
+    sources?: string[];
+  }>;
+};
+
 const STORAGE_KEY = "safe-haven-custom-rules";
 const AUDIT_STORAGE_KEY = "safe-haven-audit-log";
 const AI_CONTEXT_ENDPOINT = "/api/classify-context";
+const MCP_REVIEW_ENDPOINT = "/api/mcp/review-feature-plan";
 const AI_CONTEXT_TIMEOUT_MS = 20000;
 
 const app = document.querySelector<HTMLDivElement>("#app");
@@ -82,6 +103,9 @@ app.innerHTML = `
           </button>
           <button class="app-tab" type="button" data-view="tester">
             Prompt Tester
+          </button>
+          <button class="app-tab" type="button" data-view="guardrail">
+            Developer Guardrail
           </button>
         </nav>
         <div class="summary-strip" aria-label="Rule summary">
@@ -325,6 +349,79 @@ app.innerHTML = `
         </div>
       </section>
     </section>
+
+    <section class="guardrail-console view-panel" data-panel="guardrail" aria-labelledby="guardrail-title">
+      <div class="guardrail-header">
+        <div>
+          <p class="eyebrow">MCP Developer Plugin</p>
+          <h2 id="guardrail-title">Copilot Guardrail Chat</h2>
+        </div>
+        <span class="mcp-live-chip">safe_haven_review_feature_plan</span>
+      </div>
+
+      <div class="guardrail-chat-shell">
+        <form id="guardrailForm" class="guardrail-form">
+          <label>
+            Developer request
+            <textarea
+              id="featurePlanText"
+              rows="8"
+              maxlength="3000"
+              placeholder="Example: Build a teen mental-health chatbot that stores chat history, detects self-harm, and notifies guardians for high-risk cases."
+              required
+            ></textarea>
+          </label>
+
+          <div class="context-grid">
+            <label>
+              Age group
+              <select id="guardrailAgeGroup">
+                <option value="unknown">Unknown</option>
+                <option value="teen" selected>Teen</option>
+                <option value="child">Child</option>
+                <option value="verified_adult">Verified adult</option>
+              </select>
+            </label>
+
+            <label>
+              Child access
+              <select id="guardrailChildAccess">
+                <option value="mixed_audience" selected>Mixed audience</option>
+                <option value="child_directed">Child directed</option>
+                <option value="unknown">Unknown</option>
+                <option value="verified_adult_only">Verified adult only</option>
+              </select>
+            </label>
+
+            <label>
+              App type
+              <select id="guardrailAppType">
+                <option value="chatbot">Chatbot</option>
+                <option value="education">Education</option>
+                <option value="social">Social</option>
+                <option value="gaming">Gaming</option>
+                <option value="mental_health" selected>Mental health</option>
+                <option value="adult_platform">Adult platform</option>
+                <option value="general">General</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="tester-actions">
+            <button class="primary-action" type="submit">Ask MCP guardrail</button>
+            <button class="secondary-action" type="button" id="loadGuardrailDemo">
+              Load demo
+            </button>
+          </div>
+        </form>
+
+        <section class="guardrail-output" aria-live="polite" aria-label="MCP guardrail output">
+          <div id="guardrailResult" class="guardrail-empty">
+            Ask the Safe Haven MCP server to review a feature plan before coding.
+          </div>
+        </section>
+      </div>
+    </section>
   </main>
 
   <div class="modal-backdrop" id="deleteModal" hidden>
@@ -387,6 +484,13 @@ const clearAudit = getElement<HTMLButtonElement>("#clearAudit");
 const auditCount = getElement<HTMLSpanElement>("#auditCount");
 const chatbotResult = getElement<HTMLDivElement>("#chatbotResult");
 const decisionPathResult = getElement<HTMLDivElement>("#decisionPathResult");
+const guardrailForm = getElement<HTMLFormElement>("#guardrailForm");
+const featurePlanText = getElement<HTMLTextAreaElement>("#featurePlanText");
+const guardrailAgeGroup = getElement<HTMLSelectElement>("#guardrailAgeGroup");
+const guardrailChildAccess = getElement<HTMLSelectElement>("#guardrailChildAccess");
+const guardrailAppType = getElement<HTMLSelectElement>("#guardrailAppType");
+const loadGuardrailDemo = getElement<HTMLButtonElement>("#loadGuardrailDemo");
+const guardrailResult = getElement<HTMLDivElement>("#guardrailResult");
 
 populateRubricCases();
 renderAuditCount();
@@ -443,6 +547,20 @@ rubricCaseSelect.addEventListener("change", () => {
 promptForm.addEventListener("submit", (event) => {
   event.preventDefault();
   void runPromptCheck(getSelectedRubricCase());
+});
+
+guardrailForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  void runGuardrailReview();
+});
+
+loadGuardrailDemo.addEventListener("click", () => {
+  featurePlanText.value =
+    "Build a teen mental-health chatbot that stores chat history, detects self-harm, and notifies guardians for high-risk cases.";
+  guardrailAgeGroup.value = "teen";
+  guardrailChildAccess.value = "mixed_audience";
+  guardrailAppType.value = "mental_health";
+  void runGuardrailReview();
 });
 
 runRubric.addEventListener("click", () => {
@@ -669,6 +787,224 @@ async function getAiContextSignals(
   } finally {
     window.clearTimeout(timeout);
   }
+}
+
+async function runGuardrailReview(): Promise<void> {
+  const featurePlan = featurePlanText.value.trim();
+
+  if (!featurePlan) return;
+
+  renderGuardrailLoading();
+
+  try {
+    const response = await fetch(MCP_REVIEW_ENDPOINT, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        featurePlan,
+        ageGroup: guardrailAgeGroup.value,
+        childAccess: guardrailChildAccess.value,
+        appType: guardrailAppType.value,
+      }),
+    });
+
+    const payload = (await response.json()) as {
+      provider?: string;
+      tool?: string;
+      result?: DeveloperGuardrailResult;
+      error?: string;
+    };
+
+    if (!response.ok || !payload.result) {
+      renderGuardrailError(payload.error ?? `MCP route returned ${response.status}`);
+      return;
+    }
+
+    renderGuardrailResult(payload.result, payload.provider, payload.tool);
+  } catch (error) {
+    renderGuardrailError(
+      error instanceof Error ? error.message : "Unable to reach MCP review endpoint"
+    );
+  }
+}
+
+function renderGuardrailLoading(): void {
+  guardrailResult.replaceChildren();
+  guardrailResult.className = "guardrail-empty";
+  guardrailResult.textContent =
+    "Calling the Safe Haven MCP server and reviewing the feature plan...";
+}
+
+function renderGuardrailError(message: string): void {
+  guardrailResult.replaceChildren();
+  guardrailResult.className = "guardrail-result";
+
+  const panel = document.createElement("section");
+  panel.className = "guardrail-error";
+
+  const title = document.createElement("strong");
+  title.textContent = "MCP review unavailable";
+
+  const text = document.createElement("p");
+  text.textContent = message;
+
+  panel.append(title, text);
+  guardrailResult.append(panel);
+}
+
+function renderGuardrailResult(
+  result: DeveloperGuardrailResult,
+  provider = "safe-haven-mcp",
+  tool = "safe_haven_review_feature_plan"
+): void {
+  guardrailResult.replaceChildren();
+  guardrailResult.className = "guardrail-result";
+
+  const header = document.createElement("div");
+  header.className = "guardrail-result-header";
+
+  const titleGroup = document.createElement("div");
+  const title = document.createElement("h3");
+  title.textContent = "MCP guardrail review";
+  const meta = document.createElement("p");
+  meta.textContent = `${provider} / ${tool}`;
+  titleGroup.append(title, meta);
+
+  const badge = document.createElement("span");
+  badge.className = `decision-badge ${result.risk_level}`;
+  badge.textContent = result.governance_required
+    ? `${result.risk_level.toUpperCase()} RISK`
+    : "NO GOVERNANCE TRIGGER";
+
+  header.append(titleGroup, badge);
+  guardrailResult.append(header);
+
+  const summary = document.createElement("dl");
+  summary.className = "result-summary";
+  appendMetric(
+    summary,
+    "Governance",
+    result.governance_required ? "required" : "not required"
+  );
+  appendMetric(summary, "Risk", result.risk_level);
+  appendMetric(summary, "Retention", result.recommended_retention);
+  appendMetric(
+    summary,
+    "Human oversight",
+    result.human_oversight_required ? "required" : "not required"
+  );
+  guardrailResult.append(summary);
+
+  const reason = document.createElement("section");
+  reason.className = "guardrail-section context";
+  const reasonTitle = document.createElement("strong");
+  reasonTitle.textContent = "Why the guardrail activated";
+  const reasonText = document.createElement("p");
+  reasonText.textContent = result.reason;
+  reason.append(reasonTitle, reasonText);
+  guardrailResult.append(reason);
+
+  const ruleSection = document.createElement("section");
+  ruleSection.className = "guardrail-section rules";
+  const ruleTitle = document.createElement("strong");
+  ruleTitle.textContent = "Matched governance rules";
+  ruleSection.append(ruleTitle);
+
+  if (result.matched_rule_details?.length) {
+    const ruleList = document.createElement("div");
+    ruleList.className = "guardrail-rule-list";
+    result.matched_rule_details.forEach((rule) => {
+      const item = document.createElement("article");
+      item.className = "guardrail-rule";
+
+      const heading = document.createElement("div");
+      heading.className = "matched-rule-header";
+
+      const label = document.createElement("strong");
+      label.textContent = `${rule.id}: ${rule.label}`;
+      heading.append(label);
+
+      if (rule.sources?.length) {
+        const chips = document.createElement("div");
+        chips.className = "source-chips";
+        rule.sources.forEach((source) => {
+          const chip = document.createElement("span");
+          chip.className = "source-chip";
+          chip.textContent = source;
+          chips.append(chip);
+        });
+        heading.append(chips);
+      }
+
+      item.append(heading);
+      if (rule.riskType) appendEvidenceRow(item, "Risk type", rule.riskType);
+      if (rule.whyRisk) appendEvidenceRow(item, "Why this matters", rule.whyRisk);
+      ruleList.append(item);
+    });
+    ruleSection.append(ruleList);
+  } else {
+    const chips = document.createElement("div");
+    chips.className = "signal-chip-list";
+    result.matched_rules.forEach((ruleId) => {
+      const chip = document.createElement("span");
+      chip.className = "signal-chip";
+      chip.textContent = ruleId;
+      chips.append(chip);
+    });
+    ruleSection.append(chips);
+  }
+
+  guardrailResult.append(ruleSection);
+
+  guardrailResult.append(
+    createGuardrailListSection("Required controls", result.required_controls, "controls")
+  );
+  guardrailResult.append(
+    createGuardrailListSection(
+      "Blocked design choices",
+      result.blocked_design_choices,
+      "blocked"
+    )
+  );
+  guardrailResult.append(
+    createGuardrailListSection("Recommended tests", result.recommended_tests, "tests")
+  );
+
+  const instruction = document.createElement("section");
+  instruction.className = "guardrail-section instruction";
+  const instructionTitle = document.createElement("strong");
+  instructionTitle.textContent = "Copilot instruction";
+  const instructionText = document.createElement("p");
+  instructionText.textContent = result.copilot_instruction;
+  instruction.append(instructionTitle, instructionText);
+  guardrailResult.append(instruction);
+}
+
+function createGuardrailListSection(
+  title: string,
+  items: string[],
+  tone: "controls" | "blocked" | "tests"
+): HTMLElement {
+  const section = document.createElement("section");
+  section.className = `guardrail-section ${tone}`;
+
+  const heading = document.createElement("strong");
+  heading.textContent = title;
+  section.append(heading);
+
+  const list = document.createElement("ul");
+  list.className = "guardrail-list";
+
+  items.forEach((value) => {
+    const item = document.createElement("li");
+    item.textContent = value;
+    list.append(item);
+  });
+
+  section.append(list);
+  return section;
 }
 
 function renderPromptLoading(): void {

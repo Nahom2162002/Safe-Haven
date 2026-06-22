@@ -103,6 +103,11 @@ services, or decisions affecting children.
 - Includes a paper-trail format and human-readable governance report.
 - Records every prompt test in a browser-side audit log that can be exported as
   `.jsonl`.
+- Exposes the governance layer as a portable MCP server so OpenCode or another
+  MCP-capable developer tool can use the same child-safety rules as a plugin.
+- Lets Copilot-style developer tools review feature plans, code diffs,
+  retention policies, required tests, and audit findings before risky
+  child-safety code is implemented.
 
 ## Run Locally
 
@@ -153,6 +158,84 @@ Preview the production build:
 ```sh
 npm run preview
 ```
+
+## Portable MCP Server
+
+Safe Haven can also run as a Model Context Protocol server for developer tools.
+This is the portability layer for the hackathon: the dashboard is one UI, but
+the same governance system can be called by OpenCode or any MCP-capable client.
+
+Start the MCP server from the repository root:
+
+```sh
+npm run mcp:safe-haven
+```
+
+The server runs over stdio and is meant to be launched by an MCP client. The
+included `opencode.json` registers it as:
+
+```json
+{
+  "mcp": {
+    "safe-haven": {
+      "type": "local",
+      "command": ["npm", "run", "mcp:safe-haven"],
+      "enabled": true
+    }
+  }
+}
+```
+
+Available MCP tools:
+
+- `safe_haven_classify_prompt`: runs the decision tree and returns policy,
+  matched rules, risk, action, retention, oversight, explanation, and a
+  metadata-only audit event.
+- `safe_haven_review_feature_plan`: reviews proposed chatbot, moderation,
+  retention, guardian-notification, or escalation features before coding.
+- `safe_haven_review_code_diff`: checks patches for missing child-safe
+  defaults, audit events, retention controls, escalation thresholds, and tests.
+- `safe_haven_review_retention_policy`: warns against full child conversation
+  retention and recommends minimization controls.
+- `safe_haven_generate_required_tests`: generates child-safety governance tests.
+- `safe_haven_generate_audit_finding`: creates metadata-only paper-trail
+  findings for developer decisions.
+- `safe_haven_list_locked_rules`: returns locked source-backed rules and links.
+- `safe_haven_validate_audit_trail`: validates the JSONL paper trail and
+  MCP-added hash-chain fields.
+- `safe_haven_summarize_audit_trail`: summarizes decisions for a report.
+- `safe_haven_evaluate_jsonl`: computes confusion-matrix metrics for a local
+  JSONL dataset.
+
+The MCP server does not store full prompt content by default. When
+`appendAudit` is enabled, it appends a metadata-only entry to
+`audit-trail/decisions.jsonl` with a prompt hash, selected action, retention
+mode, human-oversight decision, and source-backed references.
+
+More details are in `mcp-servers/safe-haven/README.md`.
+
+For VS Code Copilot, the workspace includes `.vscode/mcp.json` with a
+`childSafetyGovernor` MCP server. Copilot guidance is in
+`.github/copilot-instructions.md`, and a custom child-safety reviewer agent is
+defined in `.github/agents/child-safety-engineer.agent.md`.
+
+Demo the developer guardrail flow:
+
+```sh
+npm run test:mcp -- review
+```
+
+This reviews a feature plan for a teen mental-health chatbot that stores chat
+history, detects self-harm, and notifies guardians. The MCP response includes
+matched rules, risk level, blocked design choices, required controls, retention
+guidance, and recommended tests.
+
+For a visual demo, open the dashboard and use the **Developer Guardrail** tab.
+Type any developer feature request into the chat-style box and click
+**Ask MCP guardrail**. The browser calls `/api/mcp/review-feature-plan`; the API
+launches the Safe Haven MCP server over stdio and calls
+`safe_haven_review_feature_plan`, so the displayed response comes from the MCP
+tool rather than from hardcoded sample text.
 
 ## BeaverTails Evaluation
 

@@ -1,4 +1,5 @@
 import { createServer } from "node:http";
+import { spawn } from "node:child_process";
 
 const PORT = Number(process.env.PORT ?? 8787);
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY ?? process.env.GOOGLE_API_KEY;
@@ -44,8 +45,55 @@ const server = createServer(async (request, response) => {
   if (pathname === "/" && request.method === "GET") {
     sendJson(response, 200, {
       service: "Safe Haven API",
-      routes: ["GET /api/health", "POST /api/classify-context"],
+      routes: [
+        "GET /api/health",
+        "POST /api/classify-context",
+        "POST /api/mcp/review-feature-plan",
+      ],
     });
+    return;
+  }
+
+  if (pathname === "/api/mcp/review-feature-plan" && request.method === "POST") {
+    try {
+      const body = await readJsonBody(request);
+      const featurePlan = String(body.featurePlan ?? "").trim();
+
+      if (!featurePlan) {
+        sendJson(response, 400, { error: "Missing featurePlan" });
+        return;
+      }
+
+      const result = await callSafeHavenMcpTool("safe_haven_review_feature_plan", {
+        featurePlan,
+        ageGroup: body.ageGroup ?? "unknown",
+        childAccess: body.childAccess ?? "mixed_audience",
+        appType: body.appType ?? "chatbot",
+      });
+
+      sendJson(response, 200, {
+        provider: "safe-haven-mcp",
+        tool: "safe_haven_review_feature_plan",
+        result,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown MCP error";
+      console.error(
+        JSON.stringify(
+          {
+            event: "mcp_review_feature_plan_error",
+            error: message,
+          },
+          null,
+          2
+        )
+      );
+      sendJson(response, 500, {
+        provider: "safe-haven-mcp",
+        tool: "safe_haven_review_feature_plan",
+        error: message,
+      });
+    }
     return;
   }
 
@@ -386,12 +434,125 @@ function extractGeminiOutputText(payload) {
   return text;
 }
 
+async function callSafeHavenMcpTool(name, args) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, ["mcp-servers/safe-haven/server.mjs"], {
+      cwd: process.cwd(),
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    let buffer = "";
+    let stderr = "";
+    const timeout = setTimeout(() => {
+      child.kill();
+      reject(new Error("Safe Haven MCP tool timed out"));
+    }, 15000);
+
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk;
+    });
+
+    child.on("error", (error) => {
+      clearTimeout(timeout);
+      reject(error);
+    });
+
+    child.stdout.on("data", (chunk) => {
+      buffer += chunk;
+
+      while (true) {
+        const parsed = readMcpMessage(buffer);
+        if (!parsed) return;
+
+        buffer = parsed.remaining;
+        const message = parsed.message;
+
+        if (message.error) {
+          clearTimeout(timeout);
+          child.kill();
+          reject(new Error(message.error.message ?? "MCP tool returned an error"));
+          return;
+        }
+
+        if (message.id === 2) {
+          clearTimeout(timeout);
+          child.kill();
+          const text = message.result?.content?.[0]?.text;
+          if (!text) {
+            reject(new Error("MCP tool response did not include text content"));
+            return;
+          }
+          resolve(JSON.parse(text));
+          return;
+        }
+      }
+    });
+
+    child.on("exit", (code) => {
+      if (code && code !== 0) {
+        clearTimeout(timeout);
+        reject(new Error(`Safe Haven MCP exited with ${code}: ${stderr}`));
+      }
+    });
+
+    sendMcpMessage(child, 1, "initialize", {
+      protocolVersion: "2024-11-05",
+      capabilities: {},
+      clientInfo: {
+        name: "safe-haven-api-demo",
+        version: "0.1.0",
+      },
+    });
+    sendMcpMessage(child, 2, "tools/call", {
+      name,
+      arguments: args,
+    });
+  });
+}
+
+function sendMcpMessage(child, id, method, params = {}) {
+  const body = JSON.stringify({
+    jsonrpc: "2.0",
+    id,
+    method,
+    params,
+  });
+  child.stdin.write(
+    `Content-Length: ${Buffer.byteLength(body, "utf8")}\r\n\r\n${body}`
+  );
+}
+
+function readMcpMessage(buffer) {
+  const crlfEnd = buffer.indexOf("\r\n\r\n");
+  const lfEnd = buffer.indexOf("\n\n");
+  const headerEnd =
+    crlfEnd === -1 ? lfEnd : lfEnd === -1 ? crlfEnd : Math.min(crlfEnd, lfEnd);
+
+  if (headerEnd === -1) return null;
+
+  const bodyStart = headerEnd === crlfEnd ? headerEnd + 4 : headerEnd + 2;
+  const header = buffer.slice(0, headerEnd);
+  const match = /Content-Length:\s*(\d+)/i.exec(header);
+
+  if (!match) {
+    throw new Error(`Invalid MCP response header: ${header}`);
+  }
+
+  const length = Number(match[1]);
+  const bodyEnd = bodyStart + length;
+  if (buffer.length < bodyEnd) return null;
+
+  return {
+    message: JSON.parse(buffer.slice(bodyStart, bodyEnd)),
+    remaining: buffer.slice(bodyEnd),
+  };
+}
+
 async function readJsonBody(request) {
   let raw = "";
 
   for await (const chunk of request) {
     raw += chunk;
-    if (raw.length > 20_000) throw new Error("Request body too large");
+    if (raw.length > 50_000) throw new Error("Request body too large");
   }
 
   return JSON.parse(raw || "{}");
