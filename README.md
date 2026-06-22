@@ -92,6 +92,8 @@ services, or decisions affecting children.
 - Provides a prompt tester for user messages, AI outputs, developer settings,
   and guardian settings.
 - Separates platform/user context from matched harm rules.
+- Optionally calls an AI context endpoint before the decision tree, so subtle
+  multi-harm prompts can be mapped to structured rule signals.
 - Shows a full-width decision-path graphic with possible branches and the path
   selected by the prompt.
 - Displays source-backed explanations with UNICEF, UNICEF Innocenti, UNESCO,
@@ -101,6 +103,11 @@ services, or decisions affecting children.
 - Includes a paper-trail format and human-readable governance report.
 - Records every prompt test in a browser-side audit log that can be exported as
   `.jsonl`.
+- Exposes the governance layer as a portable MCP server so OpenCode or another
+  MCP-capable developer tool can use the same child-safety rules as a plugin.
+- Lets Copilot-style developer tools review feature plans, code diffs,
+  retention policies, required tests, and audit findings before risky
+  child-safety code is implemented.
 
 ## Run Locally
 
@@ -116,6 +123,30 @@ Start the Vite TypeScript frontend:
 npm run dev
 ```
 
+Start the optional AI context backend in a second terminal:
+
+```sh
+npm run dev:api
+```
+
+Open the Vite URL shown by `npm run dev`, such as
+`http://localhost:5173/` or `http://localhost:5175/`. The frontend calls
+`/api/classify-context`, and Vite proxies that request to the backend on
+`http://localhost:8787`.
+
+To use Gemini for context extraction, set a Gemini API key before starting the
+backend:
+
+```sh
+export GEMINI_API_KEY="your_api_key"
+npm run dev:api
+```
+
+`GOOGLE_API_KEY` also works as an alias. Without `GEMINI_API_KEY`, the backend
+stays local and returns fallback context signals. With `GEMINI_API_KEY`, prompt
+text is sent to Gemini for context extraction only; the locked decision tree
+still makes the final action, retention, oversight, and audit decision.
+
 Build for production:
 
 ```sh
@@ -127,6 +158,193 @@ Preview the production build:
 ```sh
 npm run preview
 ```
+
+## Portable MCP Server
+
+Safe Haven can also run as a Model Context Protocol server for developer tools.
+This is the portability layer for the hackathon: the dashboard is one UI, but
+the same governance system can be called by OpenCode or any MCP-capable client.
+
+Start the MCP server from the repository root:
+
+```sh
+npm run mcp:safe-haven
+```
+
+The server runs over stdio and is meant to be launched by an MCP client. The
+included `opencode.json` registers it as:
+
+```json
+{
+  "mcp": {
+    "safe-haven": {
+      "type": "local",
+      "command": ["npm", "run", "mcp:safe-haven"],
+      "enabled": true
+    }
+  }
+}
+```
+
+Available MCP tools:
+
+- `safe_haven_classify_prompt`: runs the decision tree and returns policy,
+  matched rules, risk, action, retention, oversight, explanation, and a
+  metadata-only audit event.
+- `safe_haven_review_feature_plan`: reviews proposed chatbot, moderation,
+  retention, guardian-notification, or escalation features before coding.
+- `safe_haven_review_code_diff`: checks patches for missing child-safe
+  defaults, audit events, retention controls, escalation thresholds, and tests.
+- `safe_haven_review_retention_policy`: warns against full child conversation
+  retention and recommends minimization controls.
+- `safe_haven_generate_required_tests`: generates child-safety governance tests.
+- `safe_haven_generate_audit_finding`: creates metadata-only paper-trail
+  findings for developer decisions.
+- `safe_haven_list_locked_rules`: returns locked source-backed rules and links.
+- `safe_haven_validate_audit_trail`: validates the JSONL paper trail and
+  MCP-added hash-chain fields.
+- `safe_haven_summarize_audit_trail`: summarizes decisions for a report.
+- `safe_haven_evaluate_jsonl`: computes confusion-matrix metrics for a local
+  JSONL dataset.
+
+The MCP server does not store full prompt content by default. When
+`appendAudit` is enabled, it appends a metadata-only entry to
+`audit-trail/decisions.jsonl` with a prompt hash, selected action, retention
+mode, human-oversight decision, and source-backed references.
+
+More details are in `mcp-servers/safe-haven/README.md`.
+
+For VS Code Copilot, the workspace includes `.vscode/mcp.json` with a
+`childSafetyGovernor` MCP server. Copilot guidance is in
+`.github/copilot-instructions.md`, and a custom child-safety reviewer agent is
+defined in `.github/agents/child-safety-engineer.agent.md`.
+
+Demo the developer guardrail flow:
+
+```sh
+npm run test:mcp -- review
+```
+
+This reviews a feature plan for a teen mental-health chatbot that stores chat
+history, detects self-harm, and notifies guardians. The MCP response includes
+matched rules, risk level, blocked design choices, required controls, retention
+guidance, and recommended tests.
+
+For a visual demo, open the dashboard and use the **Developer Guardrail** tab.
+Type any developer feature request into the chat-style box and click
+**Ask MCP guardrail**. The browser calls `/api/mcp/review-feature-plan`; the API
+launches the Safe Haven MCP server over stdio and calls
+`safe_haven_review_feature_plan`, so the displayed response comes from the MCP
+tool rather than from hardcoded sample text.
+
+## BeaverTails Evaluation
+
+Export a BeaverTails split to JSONL:
+
+```sh
+python3 -m pip install datasets
+python3 scripts/export-beavertails.py --split 30k_test --output data/beavertails-30k-test.jsonl
+```
+
+Evaluate the local Safe Haven decision engine over the JSONL:
+
+```sh
+npm run eval:beavertails -- --input data/beavertails-30k-test.jsonl --threshold medium --output reports/beavertails-local-predictions.jsonl
+```
+
+For a quick smoke test:
+
+```sh
+npm run eval:beavertails -- --input data/beavertails-30k-test.jsonl --sample 500
+```
+
+Optional local Hugging Face comparison on a smaller sample:
+
+```sh
+python3 -m pip install transformers torch
+python3 scripts/evaluate-beavertails-hf-local.py --input data/beavertails-30k-test.jsonl --sample 200
+```
+
+The Hugging Face comparison uses local model inference, not a hosted API, so it
+does not hit Gemini or Hugging Face provider rate limits after the model is
+downloaded.
+
+Hybrid local evaluation uses Hugging Face only to extract context signals, then
+routes those signals through the Safe Haven decision tree:
+
+```sh
+python3 scripts/extract-beavertails-hf-signals.py \
+  --input data/beavertails-30k-test.jsonl \
+  --output reports/beavertails-hf-signals.jsonl \
+  --sample 200 \
+  --threshold 0.45
+
+npm run eval:beavertails:hybrid -- \
+  --input data/beavertails-30k-test.jsonl \
+  --sample 200 \
+  --threshold medium \
+  --output reports/beavertails-hybrid-predictions.jsonl
+```
+
+Gemini batched context extraction can evaluate a 100-row stratified sample with
+far fewer provider requests:
+
+```sh
+export GEMINI_API_KEY="your_key"
+npm run eval:beavertails:gemini-signals -- \
+  --input data/beavertails-30k-test.jsonl \
+  --output reports/beavertails-gemini-signals-100.jsonl \
+  --safe 50 \
+  --unsafe 50 \
+  --batch-size 25
+
+npm run eval:beavertails -- \
+  --input data/beavertails-30k-test.jsonl \
+  --sample 100 \
+  --signals reports/beavertails-gemini-signals-100.jsonl \
+  --threshold medium \
+  --output reports/beavertails-gemini-hybrid-predictions.jsonl
+```
+
+The signal file is cached, so the decision-tree evaluation can be rerun without
+calling Gemini again.
+
+Create paired mock datasets for child-specific and adult-specific policy
+contexts:
+
+```sh
+npm run data:mock-contexts -- \
+  --input data/beavertails-30k-test.jsonl \
+  --sample 200 \
+  --childOutput data/mock-child-safety-200.jsonl \
+  --adultOutput data/mock-adult-safety-200.jsonl
+```
+
+Evaluate each dataset with its row-level context:
+
+```sh
+npm run eval:beavertails -- --input data/mock-child-safety-200.jsonl
+npm run eval:beavertails -- --input data/mock-adult-safety-200.jsonl
+```
+
+For a focused child/adult contrast set, use:
+
+```text
+data/mock-child-adult-contrast-50.jsonl
+```
+
+Each row has one prompt plus both labels:
+
+```json
+{
+  "prompt": "...",
+  "child_is_safe": false,
+  "adult_is_safe": true
+}
+```
+
+This set is designed to test policy-context sensitivity rather than broad
+BeaverTails coverage.
 
 ## Architecture
 

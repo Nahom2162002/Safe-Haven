@@ -9,6 +9,7 @@ __pycache__/
 
 # Generated evaluation data and model outputs
 data/*.jsonl
+reports/*.jsonl
 reports/*-signals.jsonl
 reports/*-predictions.jsonl
 

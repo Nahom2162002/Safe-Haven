@@ -2,6 +2,7 @@ import {
   LOCKED_GUIDELINES,
   childSafetyDecision,
   type AgeGroup,
+  type DetectionSignal,
   type DecisionResult,
   type InputType,
   type RetentionMode,
@@ -24,7 +25,7 @@ type CustomRule = RuleDefinition & {
 };
 
 type RuleFilter = "all" | "locked" | "custom" | "enabled" | "disabled";
-type AppView = "rules" | "tester";
+type AppView = "rules" | "tester" | "guardrail";
 
 type DecisionPathBranch = {
   id: string;
@@ -40,8 +41,40 @@ type DecisionPathStage = {
   branches: DecisionPathBranch[];
 };
 
+type AiContextResult = {
+  status: "used" | "unavailable";
+  provider?: string;
+  model?: string;
+  signals: DetectionSignal[];
+  error?: string;
+  backendNote?: string;
+};
+
+type DeveloperGuardrailResult = {
+  governance_required: boolean;
+  reason: string;
+  matched_rules: string[];
+  risk_level: "low" | "medium" | "high" | "critical";
+  recommended_retention: RetentionMode;
+  human_oversight_required: boolean;
+  required_controls: string[];
+  blocked_design_choices: string[];
+  recommended_tests: string[];
+  copilot_instruction: string;
+  matched_rule_details?: Array<{
+    id: string;
+    label: string;
+    riskType?: string;
+    whyRisk?: string;
+    sources?: string[];
+  }>;
+};
+
 const STORAGE_KEY = "safe-haven-custom-rules";
 const AUDIT_STORAGE_KEY = "safe-haven-audit-log";
+const AI_CONTEXT_ENDPOINT = "/api/classify-context";
+const MCP_REVIEW_ENDPOINT = "/api/mcp/review-feature-plan";
+const AI_CONTEXT_TIMEOUT_MS = 20000;
 
 const app = document.querySelector<HTMLDivElement>("#app");
 
@@ -70,6 +103,9 @@ app.innerHTML = `
           </button>
           <button class="app-tab" type="button" data-view="tester">
             Prompt Tester
+          </button>
+          <button class="app-tab" type="button" data-view="guardrail">
+            Developer Guardrail
           </button>
         </nav>
         <div class="summary-strip" aria-label="Rule summary">
@@ -313,6 +349,79 @@ app.innerHTML = `
         </div>
       </section>
     </section>
+
+    <section class="guardrail-console view-panel" data-panel="guardrail" aria-labelledby="guardrail-title">
+      <div class="guardrail-header">
+        <div>
+          <p class="eyebrow">MCP Developer Plugin</p>
+          <h2 id="guardrail-title">Copilot Guardrail Chat</h2>
+        </div>
+        <span class="mcp-live-chip">safe_haven_review_feature_plan</span>
+      </div>
+
+      <div class="guardrail-chat-shell">
+        <form id="guardrailForm" class="guardrail-form">
+          <label>
+            Developer request
+            <textarea
+              id="featurePlanText"
+              rows="8"
+              maxlength="3000"
+              placeholder="Example: Build a teen mental-health chatbot that stores chat history, detects self-harm, and notifies guardians for high-risk cases."
+              required
+            ></textarea>
+          </label>
+
+          <div class="context-grid">
+            <label>
+              Age group
+              <select id="guardrailAgeGroup">
+                <option value="unknown">Unknown</option>
+                <option value="teen" selected>Teen</option>
+                <option value="child">Child</option>
+                <option value="verified_adult">Verified adult</option>
+              </select>
+            </label>
+
+            <label>
+              Child access
+              <select id="guardrailChildAccess">
+                <option value="mixed_audience" selected>Mixed audience</option>
+                <option value="child_directed">Child directed</option>
+                <option value="unknown">Unknown</option>
+                <option value="verified_adult_only">Verified adult only</option>
+              </select>
+            </label>
+
+            <label>
+              App type
+              <select id="guardrailAppType">
+                <option value="chatbot">Chatbot</option>
+                <option value="education">Education</option>
+                <option value="social">Social</option>
+                <option value="gaming">Gaming</option>
+                <option value="mental_health" selected>Mental health</option>
+                <option value="adult_platform">Adult platform</option>
+                <option value="general">General</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="tester-actions">
+            <button class="primary-action" type="submit">Ask MCP guardrail</button>
+            <button class="secondary-action" type="button" id="loadGuardrailDemo">
+              Load demo
+            </button>
+          </div>
+        </form>
+
+        <section class="guardrail-output" aria-live="polite" aria-label="MCP guardrail output">
+          <div id="guardrailResult" class="guardrail-empty">
+            Ask the Safe Haven MCP server to review a feature plan before coding.
+          </div>
+        </section>
+      </div>
+    </section>
   </main>
 
   <div class="modal-backdrop" id="deleteModal" hidden>
@@ -375,6 +484,13 @@ const clearAudit = getElement<HTMLButtonElement>("#clearAudit");
 const auditCount = getElement<HTMLSpanElement>("#auditCount");
 const chatbotResult = getElement<HTMLDivElement>("#chatbotResult");
 const decisionPathResult = getElement<HTMLDivElement>("#decisionPathResult");
+const guardrailForm = getElement<HTMLFormElement>("#guardrailForm");
+const featurePlanText = getElement<HTMLTextAreaElement>("#featurePlanText");
+const guardrailAgeGroup = getElement<HTMLSelectElement>("#guardrailAgeGroup");
+const guardrailChildAccess = getElement<HTMLSelectElement>("#guardrailChildAccess");
+const guardrailAppType = getElement<HTMLSelectElement>("#guardrailAppType");
+const loadGuardrailDemo = getElement<HTMLButtonElement>("#loadGuardrailDemo");
+const guardrailResult = getElement<HTMLDivElement>("#guardrailResult");
 
 populateRubricCases();
 renderAuditCount();
@@ -424,13 +540,27 @@ rubricCaseSelect.addEventListener("change", () => {
 
   if (selectedCase) {
     applyPromptCase(selectedCase);
-    runPromptCheck(selectedCase);
+    void runPromptCheck(selectedCase);
   }
 });
 
 promptForm.addEventListener("submit", (event) => {
   event.preventDefault();
-  runPromptCheck(getSelectedRubricCase());
+  void runPromptCheck(getSelectedRubricCase());
+});
+
+guardrailForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  void runGuardrailReview();
+});
+
+loadGuardrailDemo.addEventListener("click", () => {
+  featurePlanText.value =
+    "Build a teen mental-health chatbot that stores chat history, detects self-harm, and notifies guardians for high-risk cases.";
+  guardrailAgeGroup.value = "teen";
+  guardrailChildAccess.value = "mixed_audience";
+  guardrailAppType.value = "mental_health";
+  void runGuardrailReview();
 });
 
 runRubric.addEventListener("click", () => {
@@ -541,19 +671,30 @@ function getPromptContext(): PromptTestContext {
   };
 }
 
-function runPromptCheck(rubricCase: PromptRubricCase | null): void {
+async function runPromptCheck(rubricCase: PromptRubricCase | null): Promise<void> {
   const prompt = promptText.value;
   const context = getPromptContext();
-  const result = runDecision(prompt, context);
+  renderPromptLoading();
+
+  const aiContext = await getAiContextSignals(prompt, context);
+  const result = runDecision(
+    prompt,
+    context,
+    aiContext.status === "used" ? aiContext.signals : undefined
+  );
   const evaluation = rubricCase
     ? evaluateRubricResult(result, rubricCase.expected)
     : null;
 
   recordAuditEntry(prompt, context, result, evaluation, rubricCase);
-  renderPromptResult(result, evaluation, rubricCase);
+  renderPromptResult(result, evaluation, rubricCase, aiContext);
 }
 
-function runDecision(prompt: string, context: PromptTestContext): DecisionResult {
+function runDecision(
+  prompt: string,
+  context: PromptTestContext,
+  semanticSignals?: DetectionSignal[]
+): DecisionResult {
   return childSafetyDecision(
     {
       text: prompt.trim(),
@@ -576,8 +717,301 @@ function runDecision(prompt: string, context: PromptTestContext): DecisionResult
     },
     {
       policyVersion: "hackathon-v1",
+    },
+    {
+      semanticSignals,
+      customRules,
     }
   );
+}
+
+async function getAiContextSignals(
+  prompt: string,
+  context: PromptTestContext
+): Promise<AiContextResult> {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => {
+    controller.abort("AI context endpoint timed out");
+  }, AI_CONTEXT_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(AI_CONTEXT_ENDPOINT, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        prompt: prompt.trim(),
+        context,
+      }),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      return {
+        status: "unavailable",
+        signals: [],
+        error: `${AI_CONTEXT_ENDPOINT} returned ${response.status}`,
+      };
+    }
+
+    const payload = (await response.json()) as {
+      provider?: string;
+      model?: string;
+      signals?: DetectionSignal[];
+      error?: string;
+      backendNote?: string;
+    };
+
+    return {
+      status: "used",
+      provider: payload.provider,
+      model: payload.model,
+      signals: Array.isArray(payload.signals) ? payload.signals : [],
+      error: payload.error,
+      backendNote: payload.backendNote,
+    };
+  } catch (error) {
+    const reason =
+      error instanceof DOMException && error.name === "AbortError"
+        ? `Timed out after ${AI_CONTEXT_TIMEOUT_MS / 1000}s`
+        : error instanceof Error
+          ? error.message
+          : "Endpoint unavailable";
+
+    return {
+      status: "unavailable",
+      signals: [],
+      error: `${AI_CONTEXT_ENDPOINT}: ${reason}`,
+    };
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
+async function runGuardrailReview(): Promise<void> {
+  const featurePlan = featurePlanText.value.trim();
+
+  if (!featurePlan) return;
+
+  renderGuardrailLoading();
+
+  try {
+    const response = await fetch(MCP_REVIEW_ENDPOINT, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        featurePlan,
+        ageGroup: guardrailAgeGroup.value,
+        childAccess: guardrailChildAccess.value,
+        appType: guardrailAppType.value,
+      }),
+    });
+
+    const payload = (await response.json()) as {
+      provider?: string;
+      tool?: string;
+      result?: DeveloperGuardrailResult;
+      error?: string;
+    };
+
+    if (!response.ok || !payload.result) {
+      renderGuardrailError(payload.error ?? `MCP route returned ${response.status}`);
+      return;
+    }
+
+    renderGuardrailResult(payload.result, payload.provider, payload.tool);
+  } catch (error) {
+    renderGuardrailError(
+      error instanceof Error ? error.message : "Unable to reach MCP review endpoint"
+    );
+  }
+}
+
+function renderGuardrailLoading(): void {
+  guardrailResult.replaceChildren();
+  guardrailResult.className = "guardrail-empty";
+  guardrailResult.textContent =
+    "Calling the Safe Haven MCP server and reviewing the feature plan...";
+}
+
+function renderGuardrailError(message: string): void {
+  guardrailResult.replaceChildren();
+  guardrailResult.className = "guardrail-result";
+
+  const panel = document.createElement("section");
+  panel.className = "guardrail-error";
+
+  const title = document.createElement("strong");
+  title.textContent = "MCP review unavailable";
+
+  const text = document.createElement("p");
+  text.textContent = message;
+
+  panel.append(title, text);
+  guardrailResult.append(panel);
+}
+
+function renderGuardrailResult(
+  result: DeveloperGuardrailResult,
+  provider = "safe-haven-mcp",
+  tool = "safe_haven_review_feature_plan"
+): void {
+  guardrailResult.replaceChildren();
+  guardrailResult.className = "guardrail-result";
+
+  const header = document.createElement("div");
+  header.className = "guardrail-result-header";
+
+  const titleGroup = document.createElement("div");
+  const title = document.createElement("h3");
+  title.textContent = "MCP guardrail review";
+  const meta = document.createElement("p");
+  meta.textContent = `${provider} / ${tool}`;
+  titleGroup.append(title, meta);
+
+  const badge = document.createElement("span");
+  badge.className = `decision-badge ${result.risk_level}`;
+  badge.textContent = result.governance_required
+    ? `${result.risk_level.toUpperCase()} RISK`
+    : "NO GOVERNANCE TRIGGER";
+
+  header.append(titleGroup, badge);
+  guardrailResult.append(header);
+
+  const summary = document.createElement("dl");
+  summary.className = "result-summary";
+  appendMetric(
+    summary,
+    "Governance",
+    result.governance_required ? "required" : "not required"
+  );
+  appendMetric(summary, "Risk", result.risk_level);
+  appendMetric(summary, "Retention", result.recommended_retention);
+  appendMetric(
+    summary,
+    "Human oversight",
+    result.human_oversight_required ? "required" : "not required"
+  );
+  guardrailResult.append(summary);
+
+  const reason = document.createElement("section");
+  reason.className = "guardrail-section context";
+  const reasonTitle = document.createElement("strong");
+  reasonTitle.textContent = "Why the guardrail activated";
+  const reasonText = document.createElement("p");
+  reasonText.textContent = result.reason;
+  reason.append(reasonTitle, reasonText);
+  guardrailResult.append(reason);
+
+  const ruleSection = document.createElement("section");
+  ruleSection.className = "guardrail-section rules";
+  const ruleTitle = document.createElement("strong");
+  ruleTitle.textContent = "Matched governance rules";
+  ruleSection.append(ruleTitle);
+
+  if (result.matched_rule_details?.length) {
+    const ruleList = document.createElement("div");
+    ruleList.className = "guardrail-rule-list";
+    result.matched_rule_details.forEach((rule) => {
+      const item = document.createElement("article");
+      item.className = "guardrail-rule";
+
+      const heading = document.createElement("div");
+      heading.className = "matched-rule-header";
+
+      const label = document.createElement("strong");
+      label.textContent = `${rule.id}: ${rule.label}`;
+      heading.append(label);
+
+      if (rule.sources?.length) {
+        const chips = document.createElement("div");
+        chips.className = "source-chips";
+        rule.sources.forEach((source) => {
+          const chip = document.createElement("span");
+          chip.className = "source-chip";
+          chip.textContent = source;
+          chips.append(chip);
+        });
+        heading.append(chips);
+      }
+
+      item.append(heading);
+      if (rule.riskType) appendEvidenceRow(item, "Risk type", rule.riskType);
+      if (rule.whyRisk) appendEvidenceRow(item, "Why this matters", rule.whyRisk);
+      ruleList.append(item);
+    });
+    ruleSection.append(ruleList);
+  } else {
+    const chips = document.createElement("div");
+    chips.className = "signal-chip-list";
+    result.matched_rules.forEach((ruleId) => {
+      const chip = document.createElement("span");
+      chip.className = "signal-chip";
+      chip.textContent = ruleId;
+      chips.append(chip);
+    });
+    ruleSection.append(chips);
+  }
+
+  guardrailResult.append(ruleSection);
+
+  guardrailResult.append(
+    createGuardrailListSection("Required controls", result.required_controls, "controls")
+  );
+  guardrailResult.append(
+    createGuardrailListSection(
+      "Blocked design choices",
+      result.blocked_design_choices,
+      "blocked"
+    )
+  );
+  guardrailResult.append(
+    createGuardrailListSection("Recommended tests", result.recommended_tests, "tests")
+  );
+
+  const instruction = document.createElement("section");
+  instruction.className = "guardrail-section instruction";
+  const instructionTitle = document.createElement("strong");
+  instructionTitle.textContent = "Copilot instruction";
+  const instructionText = document.createElement("p");
+  instructionText.textContent = result.copilot_instruction;
+  instruction.append(instructionTitle, instructionText);
+  guardrailResult.append(instruction);
+}
+
+function createGuardrailListSection(
+  title: string,
+  items: string[],
+  tone: "controls" | "blocked" | "tests"
+): HTMLElement {
+  const section = document.createElement("section");
+  section.className = `guardrail-section ${tone}`;
+
+  const heading = document.createElement("strong");
+  heading.textContent = title;
+  section.append(heading);
+
+  const list = document.createElement("ul");
+  list.className = "guardrail-list";
+
+  items.forEach((value) => {
+    const item = document.createElement("li");
+    item.textContent = value;
+    list.append(item);
+  });
+
+  section.append(list);
+  return section;
+}
+
+function renderPromptLoading(): void {
+  chatbotResult.replaceChildren();
+  chatbotResult.className = "chatbot-empty";
+  chatbotResult.textContent =
+    "Extracting model context signals, then running the governance decision tree...";
 }
 
 function runRubricSuite(): void {
@@ -664,6 +1098,14 @@ function recordAuditEntry(
     promptPreview: prompt.trim().slice(0, 180),
     inputType: context.inputType,
     context: result.context,
+    detectionSignals: result.detectionSignals.map((signal) => ({
+      ruleId: signal.ruleId,
+      label: signal.label,
+      source: signal.source,
+      confidence: signal.confidence,
+      evidence: signal.evidence,
+      rationale: signal.rationale,
+    })),
     matchedRules: result.matchedRules.map((rule) => ({
       id: rule.id,
       label: rule.label,
@@ -698,7 +1140,8 @@ function recordAuditEntry(
 function renderPromptResult(
   result: DecisionResult,
   evaluation: RubricEvaluation | null,
-  rubricCase: PromptRubricCase | null
+  rubricCase: PromptRubricCase | null,
+  aiContext?: AiContextResult
 ): void {
   chatbotResult.replaceChildren();
   chatbotResult.className = "chatbot-result";
@@ -730,6 +1173,10 @@ function renderPromptResult(
     result.humanReviewRequired ? "required" : "not required"
   );
   chatbotResult.append(summary);
+
+  if (aiContext) {
+    chatbotResult.append(createAiContextPanel(aiContext));
+  }
 
   const explanation = document.createElement("div");
   explanation.className = "decision-explanation";
@@ -774,6 +1221,9 @@ function renderPromptResult(
   rulesHeading.textContent = "Matched harm rules";
   rulesSection.append(rulesHeading);
 
+  const signalSummary = createSignalSummary(result.detectionSignals);
+  if (signalSummary) rulesSection.append(signalSummary);
+
   if (result.matchedRules.length === 0) {
     const empty = document.createElement("p");
     empty.textContent = "No locked harm rules matched this prompt.";
@@ -798,7 +1248,22 @@ function renderPromptResult(
       ruleItem.append(ruleHeader);
 
       appendEvidenceRow(ruleItem, "Rule", rule.description);
+      if (rule.detectionSources?.length) {
+        appendEvidenceRow(
+          ruleItem,
+          "Detection source",
+          formatDetectionSources(rule.detectionSources)
+        );
+      }
       if (rule.matchReason) appendEvidenceRow(ruleItem, "Match", rule.matchReason);
+      if (rule.classifierSignal) {
+        appendEvidenceRow(
+          ruleItem,
+          "Classifier confidence",
+          `${Math.round(rule.classifierSignal.confidence * 100)}%`
+        );
+        appendEvidenceRow(ruleItem, "Signal evidence", rule.classifierSignal.evidence);
+      }
       if (rule.riskType) appendEvidenceRow(ruleItem, "Risk type", rule.riskType);
       if (rule.whyRisk) appendEvidenceRow(ruleItem, "Why this is a risk", rule.whyRisk);
       if (rule.userGuidance) {
@@ -876,6 +1341,124 @@ function appendMetric(list: HTMLDListElement, label: string, value: string): voi
   description.textContent = value;
   wrapper.append(term, description);
   list.append(wrapper);
+}
+
+function createAiContextPanel(aiContext: AiContextResult): HTMLElement {
+  const panel = document.createElement("section");
+  panel.className = "ai-context-panel";
+
+  const header = document.createElement("div");
+  header.className = "ai-context-header";
+
+  const title = document.createElement("strong");
+  title.textContent = "AI context endpoint";
+
+  const badge = document.createElement("span");
+  badge.className =
+    aiContext.status === "used" ? "ai-context-badge used" : "ai-context-badge fallback";
+  badge.textContent = aiContext.status === "used" ? "CONNECTED" : "LOCAL FALLBACK";
+
+  header.append(title, badge);
+
+  const meta = document.createElement("p");
+  meta.textContent =
+    aiContext.status === "used"
+      ? `${aiContext.provider ?? "unknown provider"} / ${
+          aiContext.model ?? "unknown model"
+        } returned ${aiContext.signals.length} signal${
+          aiContext.signals.length === 1 ? "" : "s"
+        }.${aiContext.backendNote ? " Model extraction fell back to local signals." : ""}`
+      : `Endpoint unavailable; decision engine used local semantic detection. ${
+          aiContext.error ? `Reason: ${aiContext.error}` : ""
+        }`;
+
+  panel.append(header, meta);
+
+  if (aiContext.status === "used" && aiContext.signals.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "ai-context-empty";
+    empty.textContent =
+      "The endpoint returned no context signals. Regex and local governance checks may still match rules below.";
+    panel.append(empty);
+  }
+
+  if (aiContext.status === "used" && (aiContext.backendNote || aiContext.error)) {
+    const error = document.createElement("p");
+    error.className = "ai-context-empty";
+    error.textContent = `Backend note: ${aiContext.backendNote ?? aiContext.error}`;
+    panel.append(error);
+  }
+
+  if (aiContext.signals.length > 0) {
+    const list = document.createElement("div");
+    list.className = "ai-context-signal-list";
+
+    aiContext.signals.forEach((signal) => {
+      const item = document.createElement("article");
+      item.className = "ai-context-signal";
+
+      const signalTitle = document.createElement("strong");
+      signalTitle.textContent = `${signal.ruleId}: ${signal.label}`;
+
+      const confidence = document.createElement("span");
+      confidence.textContent = `${Math.round(signal.confidence * 100)}%`;
+
+      const rationale = document.createElement("p");
+      rationale.textContent = signal.rationale;
+
+      item.append(signalTitle, confidence, rationale);
+      list.append(item);
+    });
+
+    panel.append(list);
+  }
+
+  return panel;
+}
+
+function createSignalSummary(signals: DetectionSignal[]): HTMLElement | null {
+  if (signals.length === 0) return null;
+
+  const wrapper = document.createElement("div");
+  wrapper.className = "signal-summary";
+
+  const title = document.createElement("span");
+  title.textContent = "Hybrid signals";
+  wrapper.append(title);
+
+  const list = document.createElement("div");
+  list.className = "signal-chip-list";
+
+  signals.forEach((signal) => {
+    const chip = document.createElement("span");
+    chip.className = "signal-chip";
+    chip.textContent = `${signal.label} -> ${signal.ruleId} (${Math.round(
+      signal.confidence * 100
+    )}%)`;
+    list.append(chip);
+  });
+
+  const note = document.createElement("p");
+  note.textContent =
+    "Classifier signals provide context; locked rules, context policy, retention, and oversight still control the final decision.";
+
+  wrapper.append(list, note);
+  return wrapper;
+}
+
+function formatDetectionSources(
+  sources: NonNullable<DecisionResult["matchedRules"][number]["detectionSources"]>
+): string {
+  const labels: Record<(typeof sources)[number], string> = {
+    keyword: "Keyword rule",
+    semantic_classifier: "Semantic classifier",
+    llm_backend: "LLM backend",
+    custom_rule: "Custom guardian rule",
+    manual_flag: "Manual context flag",
+    retention_request: "Retention request",
+  };
+
+  return sources.map((source) => labels[source]).join(", ");
 }
 
 function renderRubricEvaluation(
@@ -1055,6 +1638,26 @@ function buildDecisionPathStages(result: DecisionResult): DecisionPathStage[] {
             !hasGovernanceReview,
           "review",
           "Matched a high or medium-risk locked rule."
+        ),
+      ],
+    },
+    {
+      id: "signal-detection",
+      label: "Signal Detection",
+      branches: [
+        pathBranch(
+          "no_classifier_signal",
+          "No classifier signal",
+          result.detectionSignals.length === 0,
+          "pass",
+          "No semantic context signal detected."
+        ),
+        pathBranch(
+          "classifier_signal",
+          "Hybrid signal",
+          result.detectionSignals.length > 0,
+          "review",
+          "Classifier context is routed through locked rules."
         ),
       ],
     },
