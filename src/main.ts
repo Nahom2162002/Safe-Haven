@@ -687,9 +687,6 @@ function recordAuditEntry(
     rightsReview: result.audit.rightsReview,
     rubricCase: rubricCase?.id ?? null,
     rubricPassed: evaluation?.passed ?? null,
-    expectedConcerning: evaluation?.expectedConcerning ?? null,
-    actualFlagged: evaluation?.actualFlagged ?? null,
-    concernOutcome: evaluation?.concernOutcome ?? null,
     explanation: result.explanation,
   };
 
@@ -867,8 +864,6 @@ function renderPromptResult(
 
   if (evaluation && rubricCase) {
     renderRubricEvaluation(evaluation, rubricCase);
-  } else if (evaluation) {
-    renderConcernEvaluation(evaluation);
   }
 }
 
@@ -900,19 +895,8 @@ function renderRubricEvaluation(
   badge.className = evaluation.passed ? "status-badge pass" : "status-badge fail";
   badge.textContent = evaluation.passed ? "PASS" : "FAIL";
 
-  const outcome = document.createElement("span");
-  outcome.className = `outcome-badge ${evaluation.concernOutcome}`;
-  outcome.textContent = formatConcernOutcome(evaluation.concernOutcome);
-
-  header.append(title, outcome, badge);
+  header.append(title, badge);
   rubric.append(header);
-
-  const classification = document.createElement("p");
-  classification.className = "classification-summary";
-  classification.textContent = `Ground truth: ${
-    evaluation.expectedConcerning ? "concerning" : "not concerning"
-  }. Engine result: ${evaluation.actualFlagged ? "flagged" : "not flagged"}.`;
-  rubric.append(classification);
 
   const list = document.createElement("ul");
   list.className = "check-list";
@@ -925,33 +909,6 @@ function renderRubricEvaluation(
   });
 
   rubric.append(list);
-  chatbotResult.append(rubric);
-}
-
-function renderConcernEvaluation(evaluation: RubricEvaluation): void {
-  const rubric = document.createElement("section");
-  rubric.className = "rubric-result";
-
-  const header = document.createElement("div");
-  header.className = "result-header";
-
-  const title = document.createElement("h4");
-  title.textContent = "Freeform classification";
-
-  const outcome = document.createElement("span");
-  outcome.className = `outcome-badge ${evaluation.concernOutcome}`;
-  outcome.textContent = formatConcernOutcome(evaluation.concernOutcome);
-
-  header.append(title, outcome);
-  rubric.append(header);
-
-  const classification = document.createElement("p");
-  classification.className = "classification-summary";
-  classification.textContent = `Ground truth: ${
-    evaluation.expectedConcerning ? "concerning" : "not concerning"
-  }. Engine result: ${evaluation.actualFlagged ? "flagged" : "not flagged"}.`;
-  rubric.append(classification);
-
   chatbotResult.append(rubric);
 }
 
