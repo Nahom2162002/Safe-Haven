@@ -1,3 +1,18 @@
 node_modules/
 dist/
 .DS_Store
+.env
+.env.local
+.venv/
+__pycache__/
+*.pyc
+
+# Generated evaluation data and model outputs
+data/*.jsonl
+reports/*-signals.jsonl
+reports/*-predictions.jsonl
+
+# Keep small committed fixtures and hand-authored mock data
+!data/beavertails-smoke.jsonl
+!data/beavertails-smoke-signals.jsonl
+!data/mock-child-adult-contrast-50.jsonl
