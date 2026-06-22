@@ -5,10 +5,15 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:api": "node server/api-server.mjs",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "verify:opencode": "node scripts/verify-opencode.mjs",
-    "validate:audit": "node scripts/validate-audit-jsonl.mjs"
+    "validate:audit": "node scripts/validate-audit-jsonl.mjs",
+    "eval:beavertails": "node scripts/evaluate-beavertails-local.mjs",
+    "eval:beavertails:hybrid": "node scripts/evaluate-beavertails-local.mjs --signals reports/beavertails-hf-signals.jsonl",
+    "eval:beavertails:gemini-signals": "node scripts/extract-beavertails-gemini-batch.mjs",
+    "data:mock-contexts": "node scripts/create-context-mock-datasets.mjs"
   },
   "devDependencies": {
     "typescript": "^5.5.4",

@@ -2,6 +2,7 @@ import {
   LOCKED_GUIDELINES,
   childSafetyDecision,
   type AgeGroup,
+  type DetectionSignal,
   type DecisionResult,
   type InputType,
   type RetentionMode,
@@ -40,8 +41,19 @@ type DecisionPathStage = {
   branches: DecisionPathBranch[];
 };
 
+type AiContextResult = {
+  status: "used" | "unavailable";
+  provider?: string;
+  model?: string;
+  signals: DetectionSignal[];
+  error?: string;
+  backendNote?: string;
+};
+
 const STORAGE_KEY = "safe-haven-custom-rules";
 const AUDIT_STORAGE_KEY = "safe-haven-audit-log";
+const AI_CONTEXT_ENDPOINT = "/api/classify-context";
+const AI_CONTEXT_TIMEOUT_MS = 20000;
 
 const app = document.querySelector<HTMLDivElement>("#app");
 
@@ -424,13 +436,13 @@ rubricCaseSelect.addEventListener("change", () => {
 
   if (selectedCase) {
     applyPromptCase(selectedCase);
-    runPromptCheck(selectedCase);
+    void runPromptCheck(selectedCase);
   }
 });
 
 promptForm.addEventListener("submit", (event) => {
   event.preventDefault();
-  runPromptCheck(getSelectedRubricCase());
+  void runPromptCheck(getSelectedRubricCase());
 });
 
 runRubric.addEventListener("click", () => {
@@ -541,19 +553,30 @@ function getPromptContext(): PromptTestContext {
   };
 }
 
-function runPromptCheck(rubricCase: PromptRubricCase | null): void {
+async function runPromptCheck(rubricCase: PromptRubricCase | null): Promise<void> {
   const prompt = promptText.value;
   const context = getPromptContext();
-  const result = runDecision(prompt, context);
+  renderPromptLoading();
+
+  const aiContext = await getAiContextSignals(prompt, context);
+  const result = runDecision(
+    prompt,
+    context,
+    aiContext.status === "used" ? aiContext.signals : undefined
+  );
   const evaluation = rubricCase
     ? evaluateRubricResult(result, rubricCase.expected)
     : null;
 
   recordAuditEntry(prompt, context, result, evaluation, rubricCase);
-  renderPromptResult(result, evaluation, rubricCase);
+  renderPromptResult(result, evaluation, rubricCase, aiContext);
 }
 
-function runDecision(prompt: string, context: PromptTestContext): DecisionResult {
+function runDecision(
+  prompt: string,
+  context: PromptTestContext,
+  semanticSignals?: DetectionSignal[]
+): DecisionResult {
   return childSafetyDecision(
     {
       text: prompt.trim(),
@@ -576,8 +599,83 @@ function runDecision(prompt: string, context: PromptTestContext): DecisionResult
     },
     {
       policyVersion: "hackathon-v1",
+    },
+    {
+      semanticSignals,
+      customRules,
     }
   );
+}
+
+async function getAiContextSignals(
+  prompt: string,
+  context: PromptTestContext
+): Promise<AiContextResult> {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => {
+    controller.abort("AI context endpoint timed out");
+  }, AI_CONTEXT_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(AI_CONTEXT_ENDPOINT, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        prompt: prompt.trim(),
+        context,
+      }),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      return {
+        status: "unavailable",
+        signals: [],
+        error: `${AI_CONTEXT_ENDPOINT} returned ${response.status}`,
+      };
+    }
+
+    const payload = (await response.json()) as {
+      provider?: string;
+      model?: string;
+      signals?: DetectionSignal[];
+      error?: string;
+      backendNote?: string;
+    };
+
+    return {
+      status: "used",
+      provider: payload.provider,
+      model: payload.model,
+      signals: Array.isArray(payload.signals) ? payload.signals : [],
+      error: payload.error,
+      backendNote: payload.backendNote,
+    };
+  } catch (error) {
+    const reason =
+      error instanceof DOMException && error.name === "AbortError"
+        ? `Timed out after ${AI_CONTEXT_TIMEOUT_MS / 1000}s`
+        : error instanceof Error
+          ? error.message
+          : "Endpoint unavailable";
+
+    return {
+      status: "unavailable",
+      signals: [],
+      error: `${AI_CONTEXT_ENDPOINT}: ${reason}`,
+    };
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
+function renderPromptLoading(): void {
+  chatbotResult.replaceChildren();
+  chatbotResult.className = "chatbot-empty";
+  chatbotResult.textContent =
+    "Extracting model context signals, then running the governance decision tree...";
 }
 
 function runRubricSuite(): void {
@@ -664,6 +762,14 @@ function recordAuditEntry(
     promptPreview: prompt.trim().slice(0, 180),
     inputType: context.inputType,
     context: result.context,
+    detectionSignals: result.detectionSignals.map((signal) => ({
+      ruleId: signal.ruleId,
+      label: signal.label,
+      source: signal.source,
+      confidence: signal.confidence,
+      evidence: signal.evidence,
+      rationale: signal.rationale,
+    })),
     matchedRules: result.matchedRules.map((rule) => ({
       id: rule.id,
       label: rule.label,
@@ -698,7 +804,8 @@ function recordAuditEntry(
 function renderPromptResult(
   result: DecisionResult,
   evaluation: RubricEvaluation | null,
-  rubricCase: PromptRubricCase | null
+  rubricCase: PromptRubricCase | null,
+  aiContext?: AiContextResult
 ): void {
   chatbotResult.replaceChildren();
   chatbotResult.className = "chatbot-result";
@@ -730,6 +837,10 @@ function renderPromptResult(
     result.humanReviewRequired ? "required" : "not required"
   );
   chatbotResult.append(summary);
+
+  if (aiContext) {
+    chatbotResult.append(createAiContextPanel(aiContext));
+  }
 
   const explanation = document.createElement("div");
   explanation.className = "decision-explanation";
@@ -774,6 +885,9 @@ function renderPromptResult(
   rulesHeading.textContent = "Matched harm rules";
   rulesSection.append(rulesHeading);
 
+  const signalSummary = createSignalSummary(result.detectionSignals);
+  if (signalSummary) rulesSection.append(signalSummary);
+
   if (result.matchedRules.length === 0) {
     const empty = document.createElement("p");
     empty.textContent = "No locked harm rules matched this prompt.";
@@ -798,7 +912,22 @@ function renderPromptResult(
       ruleItem.append(ruleHeader);
 
       appendEvidenceRow(ruleItem, "Rule", rule.description);
+      if (rule.detectionSources?.length) {
+        appendEvidenceRow(
+          ruleItem,
+          "Detection source",
+          formatDetectionSources(rule.detectionSources)
+        );
+      }
       if (rule.matchReason) appendEvidenceRow(ruleItem, "Match", rule.matchReason);
+      if (rule.classifierSignal) {
+        appendEvidenceRow(
+          ruleItem,
+          "Classifier confidence",
+          `${Math.round(rule.classifierSignal.confidence * 100)}%`
+        );
+        appendEvidenceRow(ruleItem, "Signal evidence", rule.classifierSignal.evidence);
+      }
       if (rule.riskType) appendEvidenceRow(ruleItem, "Risk type", rule.riskType);
       if (rule.whyRisk) appendEvidenceRow(ruleItem, "Why this is a risk", rule.whyRisk);
       if (rule.userGuidance) {
@@ -876,6 +1005,124 @@ function appendMetric(list: HTMLDListElement, label: string, value: string): voi
   description.textContent = value;
   wrapper.append(term, description);
   list.append(wrapper);
+}
+
+function createAiContextPanel(aiContext: AiContextResult): HTMLElement {
+  const panel = document.createElement("section");
+  panel.className = "ai-context-panel";
+
+  const header = document.createElement("div");
+  header.className = "ai-context-header";
+
+  const title = document.createElement("strong");
+  title.textContent = "AI context endpoint";
+
+  const badge = document.createElement("span");
+  badge.className =
+    aiContext.status === "used" ? "ai-context-badge used" : "ai-context-badge fallback";
+  badge.textContent = aiContext.status === "used" ? "CONNECTED" : "LOCAL FALLBACK";
+
+  header.append(title, badge);
+
+  const meta = document.createElement("p");
+  meta.textContent =
+    aiContext.status === "used"
+      ? `${aiContext.provider ?? "unknown provider"} / ${
+          aiContext.model ?? "unknown model"
+        } returned ${aiContext.signals.length} signal${
+          aiContext.signals.length === 1 ? "" : "s"
+        }.${aiContext.backendNote ? " Model extraction fell back to local signals." : ""}`
+      : `Endpoint unavailable; decision engine used local semantic detection. ${
+          aiContext.error ? `Reason: ${aiContext.error}` : ""
+        }`;
+
+  panel.append(header, meta);
+
+  if (aiContext.status === "used" && aiContext.signals.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "ai-context-empty";
+    empty.textContent =
+      "The endpoint returned no context signals. Regex and local governance checks may still match rules below.";
+    panel.append(empty);
+  }
+
+  if (aiContext.status === "used" && (aiContext.backendNote || aiContext.error)) {
+    const error = document.createElement("p");
+    error.className = "ai-context-empty";
+    error.textContent = `Backend note: ${aiContext.backendNote ?? aiContext.error}`;
+    panel.append(error);
+  }
+
+  if (aiContext.signals.length > 0) {
+    const list = document.createElement("div");
+    list.className = "ai-context-signal-list";
+
+    aiContext.signals.forEach((signal) => {
+      const item = document.createElement("article");
+      item.className = "ai-context-signal";
+
+      const signalTitle = document.createElement("strong");
+      signalTitle.textContent = `${signal.ruleId}: ${signal.label}`;
+
+      const confidence = document.createElement("span");
+      confidence.textContent = `${Math.round(signal.confidence * 100)}%`;
+
+      const rationale = document.createElement("p");
+      rationale.textContent = signal.rationale;
+
+      item.append(signalTitle, confidence, rationale);
+      list.append(item);
+    });
+
+    panel.append(list);
+  }
+
+  return panel;
+}
+
+function createSignalSummary(signals: DetectionSignal[]): HTMLElement | null {
+  if (signals.length === 0) return null;
+
+  const wrapper = document.createElement("div");
+  wrapper.className = "signal-summary";
+
+  const title = document.createElement("span");
+  title.textContent = "Hybrid signals";
+  wrapper.append(title);
+
+  const list = document.createElement("div");
+  list.className = "signal-chip-list";
+
+  signals.forEach((signal) => {
+    const chip = document.createElement("span");
+    chip.className = "signal-chip";
+    chip.textContent = `${signal.label} -> ${signal.ruleId} (${Math.round(
+      signal.confidence * 100
+    )}%)`;
+    list.append(chip);
+  });
+
+  const note = document.createElement("p");
+  note.textContent =
+    "Classifier signals provide context; locked rules, context policy, retention, and oversight still control the final decision.";
+
+  wrapper.append(list, note);
+  return wrapper;
+}
+
+function formatDetectionSources(
+  sources: NonNullable<DecisionResult["matchedRules"][number]["detectionSources"]>
+): string {
+  const labels: Record<(typeof sources)[number], string> = {
+    keyword: "Keyword rule",
+    semantic_classifier: "Semantic classifier",
+    llm_backend: "LLM backend",
+    custom_rule: "Custom guardian rule",
+    manual_flag: "Manual context flag",
+    retention_request: "Retention request",
+  };
+
+  return sources.map((source) => labels[source]).join(", ");
 }
 
 function renderRubricEvaluation(
@@ -1055,6 +1302,26 @@ function buildDecisionPathStages(result: DecisionResult): DecisionPathStage[] {
             !hasGovernanceReview,
           "review",
           "Matched a high or medium-risk locked rule."
+        ),
+      ],
+    },
+    {
+      id: "signal-detection",
+      label: "Signal Detection",
+      branches: [
+        pathBranch(
+          "no_classifier_signal",
+          "No classifier signal",
+          result.detectionSignals.length === 0,
+          "pass",
+          "No semantic context signal detected."
+        ),
+        pathBranch(
+          "classifier_signal",
+          "Hybrid signal",
+          result.detectionSignals.length > 0,
+          "review",
+          "Classifier context is routed through locked rules."
         ),
       ],
     },

@@ -5,6 +5,7 @@ export * from "./explanation";
 export * from "./policy";
 export * from "./rightsReview";
 export * from "./risk";
+export * from "./semanticClassifier";
 export * from "./rules/detectLockedRules";
 export * from "./rules/lockedRules";
 export * from "./rules/patterns";

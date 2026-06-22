@@ -780,6 +780,77 @@ h3 {
   font-weight: 800;
 }
 
+.ai-context-panel {
+  display: grid;
+  gap: 10px;
+  border: 1px solid rgba(49, 95, 140, 0.2);
+  border-radius: 8px;
+  padding: 12px;
+  background: #f6f9fc;
+}
+
+.ai-context-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.ai-context-badge {
+  border-radius: 999px;
+  padding: 5px 8px;
+  font-size: 0.68rem;
+  font-weight: 900;
+}
+
+.ai-context-badge.used {
+  color: #fff;
+  background: var(--info);
+}
+
+.ai-context-badge.fallback {
+  color: var(--warning);
+  background: #fff4dc;
+}
+
+.ai-context-panel p {
+  margin-bottom: 0;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.ai-context-empty {
+  font-size: 0.86rem;
+}
+
+.ai-context-signal-list {
+  display: grid;
+  gap: 8px;
+}
+
+.ai-context-signal {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 10px;
+  border-top: 1px solid rgba(49, 95, 140, 0.14);
+  padding-top: 8px;
+}
+
+.ai-context-signal strong {
+  font-size: 0.88rem;
+}
+
+.ai-context-signal span {
+  color: var(--info);
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.ai-context-signal p {
+  grid-column: 1 / -1;
+  font-size: 0.84rem;
+}
+
 .decision-explanation,
 .decision-path,
 .rubric-result,
@@ -807,6 +878,41 @@ h3 {
   gap: 8px;
   border-left: 3px solid var(--accent);
   padding-left: 12px;
+}
+
+.signal-summary {
+  display: grid;
+  gap: 8px;
+  border: 1px solid rgba(49, 95, 140, 0.18);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #f2f7fb;
+}
+
+.signal-summary > span {
+  color: var(--info);
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.signal-summary p {
+  font-size: 0.86rem;
+}
+
+.signal-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.signal-chip {
+  border: 1px solid rgba(49, 95, 140, 0.22);
+  border-radius: 999px;
+  padding: 5px 9px;
+  color: #214d73;
+  background: #fff;
+  font-size: 0.72rem;
+  font-weight: 900;
 }
 
 .matched-rule-header {

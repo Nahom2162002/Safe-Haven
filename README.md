@@ -92,6 +92,8 @@ services, or decisions affecting children.
 - Provides a prompt tester for user messages, AI outputs, developer settings,
   and guardian settings.
 - Separates platform/user context from matched harm rules.
+- Optionally calls an AI context endpoint before the decision tree, so subtle
+  multi-harm prompts can be mapped to structured rule signals.
 - Shows a full-width decision-path graphic with possible branches and the path
   selected by the prompt.
 - Displays source-backed explanations with UNICEF, UNICEF Innocenti, UNESCO,
@@ -116,6 +118,30 @@ Start the Vite TypeScript frontend:
 npm run dev
 ```
 
+Start the optional AI context backend in a second terminal:
+
+```sh
+npm run dev:api
+```
+
+Open the Vite URL shown by `npm run dev`, such as
+`http://localhost:5173/` or `http://localhost:5175/`. The frontend calls
+`/api/classify-context`, and Vite proxies that request to the backend on
+`http://localhost:8787`.
+
+To use Gemini for context extraction, set a Gemini API key before starting the
+backend:
+
+```sh
+export GEMINI_API_KEY="your_api_key"
+npm run dev:api
+```
+
+`GOOGLE_API_KEY` also works as an alias. Without `GEMINI_API_KEY`, the backend
+stays local and returns fallback context signals. With `GEMINI_API_KEY`, prompt
+text is sent to Gemini for context extraction only; the locked decision tree
+still makes the final action, retention, oversight, and audit decision.
+
 Build for production:
 
 ```sh
@@ -127,6 +153,115 @@ Preview the production build:
 ```sh
 npm run preview
 ```
+
+## BeaverTails Evaluation
+
+Export a BeaverTails split to JSONL:
+
+```sh
+python3 -m pip install datasets
+python3 scripts/export-beavertails.py --split 30k_test --output data/beavertails-30k-test.jsonl
+```
+
+Evaluate the local Safe Haven decision engine over the JSONL:
+
+```sh
+npm run eval:beavertails -- --input data/beavertails-30k-test.jsonl --threshold medium --output reports/beavertails-local-predictions.jsonl
+```
+
+For a quick smoke test:
+
+```sh
+npm run eval:beavertails -- --input data/beavertails-30k-test.jsonl --sample 500
+```
+
+Optional local Hugging Face comparison on a smaller sample:
+
+```sh
+python3 -m pip install transformers torch
+python3 scripts/evaluate-beavertails-hf-local.py --input data/beavertails-30k-test.jsonl --sample 200
+```
+
+The Hugging Face comparison uses local model inference, not a hosted API, so it
+does not hit Gemini or Hugging Face provider rate limits after the model is
+downloaded.
+
+Hybrid local evaluation uses Hugging Face only to extract context signals, then
+routes those signals through the Safe Haven decision tree:
+
+```sh
+python3 scripts/extract-beavertails-hf-signals.py \
+  --input data/beavertails-30k-test.jsonl \
+  --output reports/beavertails-hf-signals.jsonl \
+  --sample 200 \
+  --threshold 0.45
+
+npm run eval:beavertails:hybrid -- \
+  --input data/beavertails-30k-test.jsonl \
+  --sample 200 \
+  --threshold medium \
+  --output reports/beavertails-hybrid-predictions.jsonl
+```
+
+Gemini batched context extraction can evaluate a 100-row stratified sample with
+far fewer provider requests:
+
+```sh
+export GEMINI_API_KEY="your_key"
+npm run eval:beavertails:gemini-signals -- \
+  --input data/beavertails-30k-test.jsonl \
+  --output reports/beavertails-gemini-signals-100.jsonl \
+  --safe 50 \
+  --unsafe 50 \
+  --batch-size 25
+
+npm run eval:beavertails -- \
+  --input data/beavertails-30k-test.jsonl \
+  --sample 100 \
+  --signals reports/beavertails-gemini-signals-100.jsonl \
+  --threshold medium \
+  --output reports/beavertails-gemini-hybrid-predictions.jsonl
+```
+
+The signal file is cached, so the decision-tree evaluation can be rerun without
+calling Gemini again.
+
+Create paired mock datasets for child-specific and adult-specific policy
+contexts:
+
+```sh
+npm run data:mock-contexts -- \
+  --input data/beavertails-30k-test.jsonl \
+  --sample 200 \
+  --childOutput data/mock-child-safety-200.jsonl \
+  --adultOutput data/mock-adult-safety-200.jsonl
+```
+
+Evaluate each dataset with its row-level context:
+
+```sh
+npm run eval:beavertails -- --input data/mock-child-safety-200.jsonl
+npm run eval:beavertails -- --input data/mock-adult-safety-200.jsonl
+```
+
+For a focused child/adult contrast set, use:
+
+```text
+data/mock-child-adult-contrast-50.jsonl
+```
+
+Each row has one prompt plus both labels:
+
+```json
+{
+  "prompt": "...",
+  "child_is_safe": false,
+  "adult_is_safe": true
+}
+```
+
+This set is designed to test policy-context sensitivity rather than broad
+BeaverTails coverage.
 
 ## Architecture
 

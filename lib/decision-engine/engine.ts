@@ -9,6 +9,7 @@ import {
 import { calculateRiskScore, getHarmRules, mapScoreToRiskLevel } from "./risk";
 import { detectLockedRules } from "./rules/detectLockedRules";
 import { runRightsReview } from "./rightsReview";
+import { detectSemanticSignals } from "./semanticClassifier";
 import type {
   DecisionContext,
   DecisionEngineOptions,
@@ -16,6 +17,8 @@ import type {
   DecisionTraceStep,
   DeveloperPolicy,
   InputEvent,
+  MatchedRule,
+  RuleDefinition,
   ServiceContext,
   UserContext,
 } from "./types";
@@ -31,8 +34,15 @@ export function childSafetyDecision(
   const makeEventId = options.createEventId ?? defaultCreateEventId;
   const appliedPolicy = determineAppliedPolicy(user, service);
   const context = buildDecisionContext(user, service, appliedPolicy);
+  const detectionSignals =
+    options.semanticSignals ??
+    (options.enableSemanticClassifier === false
+      ? []
+      : detectSemanticSignals(input, user, service));
+  const lockedRuleMatches = detectLockedRules(input, detectionSignals);
+  const customRuleMatches = detectCustomRules(input, options.customRules ?? []);
   const matchedRules = filterRulesForContext(
-    detectLockedRules(input),
+    [...lockedRuleMatches, ...customRuleMatches],
     input,
     appliedPolicy
   );
@@ -83,6 +93,7 @@ export function childSafetyDecision(
     context,
     appliedPolicy,
     matchedRules,
+    detectionSignals,
     riskScore,
     riskLevel,
     action,
@@ -96,6 +107,7 @@ export function childSafetyDecision(
     decision: action,
     appliedPolicy,
     context,
+    detectionSignals,
     matchedRules,
     riskScore,
     riskLevel,
@@ -143,6 +155,76 @@ function mentionsChildOrTeen(text: string): boolean {
   );
 }
 
+function detectCustomRules(
+  input: InputEvent,
+  customRules: RuleDefinition[]
+): MatchedRule[] {
+  const normalizedPrompt = normalizeForMatch(input.text);
+
+  if (!normalizedPrompt) return [];
+
+  return customRules
+    .filter((rule) => !rule.locked && rule.enabled)
+    .flatMap((rule) => {
+      const keywords = extractCustomRuleKeywords(rule);
+      const matchedKeywords = keywords.filter((keyword) =>
+        normalizedPrompt.includes(keyword)
+      );
+
+      if (matchedKeywords.length < 2) return [];
+
+      return [
+        {
+          ...rule,
+          matchReason: `Custom guardian rule matched keywords: ${matchedKeywords
+            .slice(0, 5)
+            .join(", ")}.`,
+          detectionSources: ["custom_rule"],
+        },
+      ];
+    });
+}
+
+function extractCustomRuleKeywords(rule: RuleDefinition): string[] {
+  const source = `${rule.label} ${rule.category} ${rule.description}`;
+  const stopWords = new Set([
+    "about",
+    "after",
+    "attempt",
+    "attempts",
+    "because",
+    "browser",
+    "could",
+    "flag",
+    "from",
+    "guardian",
+    "into",
+    "rule",
+    "school",
+    "should",
+    "that",
+    "their",
+    "this",
+    "with",
+  ]);
+
+  return Array.from(
+    new Set(
+      normalizeForMatch(source)
+        .split(" ")
+        .filter((word) => word.length >= 4 && !stopWords.has(word))
+    )
+  );
+}
+
+function normalizeForMatch(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function buildDecisionContext(
   user: UserContext,
   service: ServiceContext,
@@ -165,6 +247,7 @@ function buildDecisionTrace({
   context,
   appliedPolicy,
   matchedRules,
+  detectionSignals,
   riskScore,
   riskLevel,
   action,
@@ -177,6 +260,7 @@ function buildDecisionTrace({
   context: DecisionContext;
   appliedPolicy: string;
   matchedRules: DecisionResult["matchedRules"];
+  detectionSignals: DecisionResult["detectionSignals"];
   riskScore: number;
   riskLevel: DecisionResult["riskLevel"];
   action: DecisionResult["decision"];
@@ -186,6 +270,9 @@ function buildDecisionTrace({
   auditRequired: boolean;
 }): DecisionTraceStep[] {
   const matchedRuleIds = matchedRules.map((rule) => rule.id).join(", ");
+  const signalLabels = detectionSignals
+    .map((signal) => `${signal.label} (${Math.round(signal.confidence * 100)}%)`)
+    .join(", ");
   const activeFlags = [
     input.repeatedAttempts && "repeated attempts",
     input.imminentRisk && "imminent risk",
@@ -212,8 +299,16 @@ function buildDecisionTrace({
         : "No locked harm category matched.",
     },
     {
+      id: "signal-detection",
+      label: "3. Hybrid signal detection",
+      status: detectionSignals.length ? "review" : "pass",
+      detail: detectionSignals.length
+        ? `Classifier signals detected: ${signalLabels}. Final action still controlled by locked rules and policy.`
+        : "No semantic classifier signals detected.",
+    },
+    {
       id: "risk",
-      label: "3. Risk scoring",
+      label: "4. Risk scoring",
       status: riskLevel === "high" || riskLevel === "critical" ? "review" : "pass",
       detail: `Risk score ${riskScore}/100 mapped to ${riskLevel}. ${
         activeFlags.length ? `Active flags: ${activeFlags.join(", ")}.` : "No extra risk flags."
@@ -221,14 +316,14 @@ function buildDecisionTrace({
     },
     {
       id: "action",
-      label: "4. Action selection",
+      label: "5. Action selection",
       status:
         action === "ALLOW" || action === "ALLOW_WITH_GUIDANCE" ? "pass" : "stop",
       detail: `${action} selected from matched rules, risk level, and applied policy.`,
     },
     {
       id: "retention",
-      label: "5. Retention selection",
+      label: "6. Retention selection",
       status:
         retentionMode === "NO_CONTENT" || retentionMode === "METADATA_ONLY"
           ? "pass"
@@ -237,7 +332,7 @@ function buildDecisionTrace({
     },
     {
       id: "rights-review",
-      label: "6. Rights review",
+      label: "7. Rights review",
       status: rightsReviewPasses ? "pass" : "stop",
       detail: rightsReviewPasses
         ? "Rights review passed necessity, proportionality, minimization, explainability, and auditability checks."
@@ -245,7 +340,7 @@ function buildDecisionTrace({
     },
     {
       id: "oversight",
-      label: "7. Oversight and audit",
+      label: "8. Oversight and audit",
       status: humanReviewRequired || auditRequired ? "review" : "pass",
       detail: `Human review ${humanReviewRequired ? "required" : "not required"}; audit ${
         auditRequired ? "required" : "not required"

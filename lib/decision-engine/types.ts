@@ -113,6 +113,25 @@ export interface ComplianceReference {
 
 export interface MatchedRule extends RuleDefinition {
   matchReason?: string;
+  detectionSources?: DetectionSource[];
+  classifierSignal?: DetectionSignal;
+}
+
+export type DetectionSource =
+  | "keyword"
+  | "semantic_classifier"
+  | "llm_backend"
+  | "custom_rule"
+  | "manual_flag"
+  | "retention_request";
+
+export interface DetectionSignal {
+  ruleId: LockedRuleId;
+  label: string;
+  source: "semantic_classifier" | "llm_backend";
+  confidence: number;
+  evidence: string;
+  rationale: string;
 }
 
 export interface RightsReview {
@@ -166,6 +185,7 @@ export interface DecisionResult {
   decision: DecisionAction;
   appliedPolicy: string;
   context: DecisionContext;
+  detectionSignals: DetectionSignal[];
   matchedRules: MatchedRule[];
   riskScore: number;
   riskLevel: RiskLevel;
@@ -180,4 +200,7 @@ export interface DecisionResult {
 export interface DecisionEngineOptions {
   now?: () => Date;
   createEventId?: () => string;
+  enableSemanticClassifier?: boolean;
+  semanticSignals?: DetectionSignal[];
+  customRules?: RuleDefinition[];
 }
