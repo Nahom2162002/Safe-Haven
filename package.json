@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
+    "evaluate:decision-tree": "node scripts/evaluate-decision-tree.mjs",
     "verify:opencode": "node scripts/verify-opencode.mjs",
     "validate:audit": "node scripts/validate-audit-jsonl.mjs"
   },

@@ -30,8 +30,8 @@ function assertFile(relativePath, label) {
 
 const config = readJson(configPath);
 
-if (!Array.isArray(config.agents) || config.agents.length === 0) {
-  throw new Error("opencode.json must define at least one agent.");
+if (!config.agent || typeof config.agent !== "object") {
+  throw new Error("opencode.json must define an agent object.");
 }
 
 if (!Array.isArray(config.instructions) || config.instructions.length === 0) {
@@ -39,25 +39,37 @@ if (!Array.isArray(config.instructions) || config.instructions.length === 0) {
 }
 
 for (const instruction of config.instructions) {
-  if (!instruction.file) {
-    throw new Error("Every instruction entry must include a file field.");
+  if (typeof instruction !== "string") {
+    throw new Error("Every instruction entry must be a file path string.");
   }
 
-  assertFile(instruction.file, "Instruction file");
+  assertFile(instruction, "Instruction file");
 }
 
-for (const agent of config.agents) {
-  if (!agent.name || !agent.mode || !agent.description) {
-    throw new Error("Every agent must include name, mode, and description.");
+const agents = Object.entries(config.agent);
+
+if (agents.length === 0) {
+  throw new Error("opencode.json must define at least one agent.");
+}
+
+for (const [name, agent] of agents) {
+  if (!agent || typeof agent !== "object") {
+    throw new Error(`Agent ${name} must be an object.`);
   }
 
-  if (!agent.systemPromptFile) {
-    throw new Error(`Agent ${agent.name} must include systemPromptFile.`);
+  if (!agent.mode || !agent.description) {
+    throw new Error(`Agent ${name} must include mode and description.`);
   }
 
-  assertFile(agent.systemPromptFile, `Agent ${agent.name} system prompt`);
+  const fileReference = agent.prompt?.match(/^\{file:(.+)\}$/);
+
+  if (!fileReference) {
+    throw new Error(`Agent ${name} must include a prompt file reference.`);
+  }
+
+  assertFile(fileReference[1], `Agent ${name} prompt`);
 }
 
 console.log(
-  `OpenCode config OK: ${config.agents.length} agents, ${config.instructions.length} instruction file(s).`
+  `OpenCode config OK: ${agents.length} agents, ${config.instructions.length} instruction file(s).`
 );

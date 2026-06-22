@@ -1,21 +1,16 @@
 {
-  "agents": [
-    {
-      "name": "fairness-advisor",
+  "$schema": "https://opencode.ai/config.json",
+  "instructions": ["AGENTS.md"],
+  "agent": {
+    "fairness-advisor": {
       "mode": "subagent",
       "description": "Reviews Safe Haven changes for fairness, privacy, child-safety, cybersecurity, and human-oversight tradeoffs.",
-      "systemPromptFile": ".opencode/agent/fairness-advisor.md"
+      "prompt": "{file:.opencode/agent/fairness-advisor.md}"
     },
-    {
-      "name": "doc-generator",
+    "doc-generator": {
       "mode": "subagent",
       "description": "Produces human-readable governance reports and audit summaries from Safe Haven decisions.",
-      "systemPromptFile": ".opencode/agent/doc-generator.md"
+      "prompt": "{file:.opencode/agent/doc-generator.md}"
     }
-  ],
-  "instructions": [
-    {
-      "file": "AGENTS.md"
-    }
-  ]
+  }
 }
