@@ -52,6 +52,8 @@ const SEMANTIC_RULES: SemanticRule[] = [
       /\bmade\s+(everyone|people|my friends|the class)\s+(hate|laugh at|turn against)\s+me\b/i,
       /\b(spread|spreading|posted|posting|shared|sharing)\s+(rumors?|lies|embarrassing|private)\b/i,
       /\b(they|someone|kids?|classmates?)\s+(won'?t stop|keep)\s+(making fun|laughing|messaging|posting)\b/i,
+      /\b(hateful|cruel|mean|abusive)\s+messages?\s+from\s+(my\s+)?(classmates?|students?|kids?|peers?)\b/i,
+      /\b(classmates?|students?|kids?|peers?)\s+(keep\s+)?(sending|posting|writing)\s+(me\s+)?(hateful|cruel|mean|abusive)\s+messages?\b/i,
     ],
   },
   {
@@ -64,6 +66,8 @@ const SEMANTIC_RULES: SemanticRule[] = [
       /\b(can'?t do this anymore|done with everything|want it all to stop)\b/i,
       /\b(i feel|i am|i'?m)\s+(hopeless|worthless|empty|trapped|done)\b/i,
       /\b(no one would care|everyone would be better without me)\b/i,
+      /\b(i\s+)?(should not|shouldn'?t|don'?t want to)\s+live\s+anymore\b/i,
+      /\bmaybe\s+i\s+(should not|shouldn'?t)\s+live\s+anymore\b/i,
     ],
   },
   {

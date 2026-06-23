@@ -74,7 +74,7 @@ const STORAGE_KEY = "safe-haven-custom-rules";
 const AUDIT_STORAGE_KEY = "safe-haven-audit-log";
 const AI_CONTEXT_ENDPOINT = "/api/classify-context";
 const MCP_REVIEW_ENDPOINT = "/api/mcp/review-feature-plan";
-const AI_CONTEXT_TIMEOUT_MS = 20000;
+const AI_CONTEXT_TIMEOUT_MS = 45000;
 
 const app = document.querySelector<HTMLDivElement>("#app");
 

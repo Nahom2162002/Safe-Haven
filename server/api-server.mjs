@@ -366,11 +366,25 @@ function fallbackSignals(prompt, context) {
     /\b(bullied|bully|harass|mean kid|make them feel bad|embarrass|humiliate|rumors?)\b/.test(
       text
     ) ||
+    /\b(hateful|cruel|mean|abusive)\s+messages?\s+from\s+(my\s+)?(classmates?|students?|kids?|peers?)\b/.test(
+      text
+    ) ||
+    /\b(classmates?|students?|kids?|peers?)\s+(keep\s+)?(sending|posting|writing)\s+(me\s+)?(hateful|cruel|mean|abusive)\s+messages?\b/.test(
+      text
+    ) ||
     /\b(they|he|she|someone|kids?|classmates?)\s+(kicked|punched|hit|slapped|shoved|pushed|attacked|threatened)\s+me\b/.test(
       text
     )
   ) {
     signals.push(signal("R4", "Peer harm, bullying, or retaliation", 0.78, prompt));
+  }
+
+  if (
+    /\b(i\s+)?(should not|shouldn'?t|don'?t want to)\s+live\s+anymore\b/.test(text) ||
+    /\bmaybe\s+i\s+(should not|shouldn'?t)\s+live\s+anymore\b/.test(text) ||
+    /\b(can'?t do this anymore|done with everything|want it all to stop)\b/.test(text)
+  ) {
+    signals.push(signal("R5", "Severe distress or self-harm concern", 0.9, prompt));
   }
 
   if (
